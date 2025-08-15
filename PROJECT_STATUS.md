@@ -1,6 +1,6 @@
 # Princess Project - Current Status
 
-## Last Updated: August 15, 2025
+## Last Updated: August 15, 2025 (Evening Update)
 
 ## 🎯 Project Overview
 Princess is a sophisticated brand development management platform for Deutsch & Co., managing a complex 104-step branding workflow with real-time progress tracking and collaborative features.
@@ -24,14 +24,18 @@ Princess is a sophisticated brand development management platform for Deutsch & 
 - ✅ Stage sidebar with detailed information
 - ✅ Professional management section with status/assignee dropdowns
 
-### Sidebar Components
-- ✅ Tabbed interface (Overview, Dependencies, Resources, Activity)
+### Sidebar Components (V2 - Latest)
+- ✅ **Simplified 2-tab interface** (Details & Activity) - cleaner design
+- ✅ **Expandable sidebar** (380px → 600px) with smooth animation
+- ✅ **Locked stage exploration** - view all info even for blocked stages
+- ✅ **View-only mode** for locked stages with clear messaging
+- ✅ **Lock icon indicators** on blocked stages
 - ✅ Mini dependency map visualization
 - ✅ Stage details with formal names and descriptions
-- ✅ Comment system with real-time updates
+- ✅ Comment system with real-time updates (disabled for locked)
 - ✅ Team member assignment with avatars
 - ✅ Resource links management
-- ✅ Video placeholder for tutorials
+- ✅ Video section (only in expanded view)
 - ✅ Activity feed with timestamps
 
 ### Data Management
@@ -45,10 +49,10 @@ Princess is a sophisticated brand development management platform for Deutsch & 
 ## 🚧 In Progress
 
 ### Visual Timeline Enhancements
-- 🔄 Expandable sidebar feature (380px → 600px)
-- 🔄 Dependency line connections (removed, needs better implementation)
-- 🔄 Phase grouping improvements
-- 🔄 Milestone markers
+- 🔄 Phase grouping improvements with headers
+- 🔄 Milestone markers for key deliverables
+- 🔄 Progress indicators per phase
+- 🔄 Search and filter functionality
 
 ### Stage Management
 - 🔄 Cascade status updates for dependent stages
@@ -80,11 +84,16 @@ Princess is a sophisticated brand development management platform for Deutsch & 
 4. Email notification placeholders
 5. Iteration counter display
 
-## 🐛 Known Issues (Fixed)
+## 🐛 Known Issues
+All major issues have been resolved! The application is stable and functional.
+
+### Previously Fixed
 - ✅ ~~Blank sidebar when clicking stages~~ - Fixed by correcting Select component values
 - ✅ ~~Data not persisting~~ - Fixed with localStorage implementation
 - ✅ ~~Dependencies not resolving~~ - Fixed with proper ID mapping
 - ✅ ~~Toast notifications stacking~~ - Fixed timeout values
+- ✅ ~~Tab density in sidebar~~ - Simplified from 4 tabs to 2
+- ✅ ~~Cannot explore locked stages~~ - Now viewable with proper restrictions
 
 ## 📊 Technical Debt
 1. TypeScript migration needed
@@ -97,12 +106,13 @@ Princess is a sophisticated brand development management platform for Deutsch & 
 
 ### New Files Created
 - `/src/api/initializeData.js` - Automatic data seeding system
+- `/src/components/dashboard/StageSidebarV2.jsx` - Improved sidebar with expandable design
 
 ### Modified Files
 - `/src/api/entities.js` - Added bulkCreate method
 - `/src/components/dashboard/ProfessionalManagement.jsx` - Fixed Select value issue
-- `/src/components/dashboard/StageSidebar.jsx` - Improved error handling
-- `/src/pages/Dashboard.jsx` - Added auto-initialization
+- `/src/components/dashboard/VisualTimeline.jsx` - Allow clicking locked stages, added lock icons
+- `/src/pages/Dashboard.jsx` - Added auto-initialization, expandable sidebar support
 
 ## 🎨 Design Decisions
 
@@ -112,8 +122,12 @@ Princess is a sophisticated brand development management platform for Deutsch & 
   - Hover highlighting for related stages
   - Glow effects for dependencies
 
-### UI Improvements
-- Cleaner sidebar with tabbed interface
+### UI Improvements (Latest)
+- **Simplified sidebar tabs** from 4 to 2 for cleaner design
+- **Expandable sidebar** (380px → 600px) for detailed view
+- **Locked stage exploration** - view everything, modify nothing
+- **Smart content display** - video only in expanded view
+- **Clear visual indicators** - lock icons on blocked stages
 - Professional management section matching reference design
 - Consistent spacing and typography
 - Smooth animations with Framer Motion
@@ -145,10 +159,11 @@ Princess is a sophisticated brand development management platform for Deutsch & 
 4. Advanced filtering and views
 
 ## 💡 Notes for Next Session
-- The sidebar blank page issue was caused by empty string values in Select components
-- Data initialization runs automatically if localStorage is empty
-- All 104 stages are now properly seeded with dependencies
-- The app is stable and ready for continued feature development
+- Sidebar has been completely redesigned with 2 tabs instead of 4
+- Expandable sidebar feature is fully functional (380px → 600px)
+- Locked stages can now be explored (view-only mode)
+- All major UX/UI issues have been resolved
+- The app is stable and ready for phase headers and search functionality
 
 ## 🔗 Resources
 - GitHub Repository: https://github.com/eimribar/Princess
