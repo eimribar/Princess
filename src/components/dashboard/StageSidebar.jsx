@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow, isValid } from "date-fns";
 import { Stage, TeamMember, Comment } from "@/api/entities"; // Added Comment
+import StageActions from './StageActions';
 
 // Helper function to find all stages that depend on a given stage, directly or indirectly
 const findDescendants = (stageId, allStages) => {
@@ -258,82 +259,13 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
 
       <ScrollArea className="flex-1">
         <CardContent className="p-6 space-y-8">
-          {/* Management Section */}
-          <div className="space-y-4">
-            <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-              <CheckSquare className="w-4 h-4 text-slate-400" />
-              <span>Management</span>
-            </h4>
-            
-            {/* Status Management */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Change Status</label>
-              <Select 
-                onValueChange={handleStatusChange} 
-                defaultValue={stage.status}
-                disabled={isUpdatingStatus}
-              >
-                <SelectTrigger className="w-full bg-white">
-                  <SelectValue placeholder="Select Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="not_started">Not Started</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="blocked">Blocked</SelectItem>
-                </SelectContent>
-              </Select>
-              {isUpdatingStatus && <p className="text-xs text-slate-500">Updating status...</p>}
-            </div>
-
-            {/* Assignment Management */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Assigned To</label>
-              <Select 
-                onValueChange={handleAssigneeChange} 
-                defaultValue={stage.assigned_to || ""}
-                disabled={isUpdatingAssignee}
-              >
-                <SelectTrigger className="w-full bg-white">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamMembers.map(member => (
-                    <SelectItem key={member.id} value={member.email}>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="w-5 h-5">
-                          <AvatarImage src={member.profile_image} />
-                          <AvatarFallback className="text-xs">
-                            {getInitials(member.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        {member.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="unassign">
-                    <span className="text-slate-500 italic">Unassign</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {isUpdatingAssignee && <p className="text-xs text-slate-500">Updating assignment...</p>}
-              
-              {/* Current Assignment Display */}
-              {assignedMember && (
-                <div className="flex items-center gap-2 mt-2 p-2 bg-slate-50 rounded-lg">
-                  <Avatar className="w-6 h-6">
-                    <AvatarImage src={assignedMember.profile_image} />
-                    <AvatarFallback className="text-xs">
-                      {getInitials(assignedMember.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm text-slate-700">
-                    Currently assigned to <strong>{assignedMember.name}</strong>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Smart Stage Actions */}
+          <StageActions 
+            stage={stage}
+            allStages={stages}
+            onStageUpdate={onStageUpdate}
+            teamMembers={teamMembers}
+          />
 
           <Separator className="bg-slate-200/60" />
 

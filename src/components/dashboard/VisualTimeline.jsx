@@ -7,8 +7,9 @@ import { Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { getDependencyStatus } from "./DependencyUtils";
 import DependencyIndicator from "./DependencyIndicator";
+import DependencyConnections from "./DependencyConnections";
 
-const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages }) => {
+const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId }) => {
   const dependencyStatus = getDependencyStatus(stage, allStages);
   const isBlocked = dependencyStatus === 'blocked';
 
@@ -58,7 +59,10 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages }) => {
   return (
     <motion.div
       className={`flex flex-col items-center gap-2 relative transition-opacity duration-300 ${isBlocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} pb-12`}
+      data-stage-id={stage.id}
       onClick={() => !isBlocked && onClick(stage.id)}
+      onMouseEnter={() => !isBlocked && setHoveredStageId && setHoveredStageId(stage.id)}
+      onMouseLeave={() => setHoveredStageId && setHoveredStageId(null)}
       whileHover={!isBlocked ? { scale: 1.05 } : {}}
       whileTap={!isBlocked ? { scale: 0.95 } : {}}
     >
@@ -109,7 +113,7 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages }) => {
   );
 };
 
-const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers }) => {
+const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers, setHoveredStageId }) => {
   const phaseStages = stages
     .filter(stage => stage.category === phase.id)
     .sort((a, b) => a.number_index - b.number_index);
@@ -142,6 +146,7 @@ const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMember
               isSelected={selectedStageId === stage.id}
               teamMembers={teamMembers}
               allStages={stages} // Pass all stages for dependency checks
+              setHoveredStageId={setHoveredStageId}
             />
           ))}
         </div>
@@ -151,7 +156,7 @@ const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMember
 };
 
 export default function VisualTimeline({ stages, onStageClick, selectedStageId, teamMembers }) {
-  // Removed hoveredStageId state as it's no longer managed globally for stage card hover effects.
+  const [hoveredStageId, setHoveredStageId] = React.useState(null);
 
   const phases = [
     {
@@ -214,7 +219,14 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
   };
 
   return (
-    <div className="space-y-8">
+    <div className="relative space-y-8">
+      {/* Dependency connections overlay */}
+      <DependencyConnections 
+        stages={stages}
+        selectedStageId={selectedStageId}
+        hoveredStageId={hoveredStageId}
+      />
+      
       {phases.map((phase) => (
         <PhaseSection
           key={phase.id}
@@ -223,6 +235,7 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
           onStageClick={onStageClick}
           selectedStageId={selectedStageId}
           teamMembers={teamMembers}
+          setHoveredStageId={setHoveredStageId}
         />
       ))}
 

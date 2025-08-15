@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { Project, Stage, Comment, Deliverable, TeamMember, OutOfScopeRequest } from "@/api/entities";
+import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedStageId, setSelectedStageId] = useState(null);
   const [isOutOfScopeFormOpen, setIsOutOfScopeFormOpen] = useState(false);
+  const [realProgress, setRealProgress] = useState(0);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -44,6 +46,10 @@ export default function Dashboard() {
       setDeliverables(deliverablesData || []);
       setTeamMembers(teamMembersData || []);
       setOutOfScopeRequests(outOfScopeData || []);
+
+      // Calculate real progress using stage manager
+      const progress = await stageManager.calculateRealProgress();
+      setRealProgress(progress);
     } catch (error) {
       console.error("Error loading data:", error);
     }
@@ -52,12 +58,33 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+
+    // Subscribe to stage manager changes for real-time updates
+    const unsubscribe = stageManager.subscribe(async (changes) => {
+      console.log('Stage changes detected:', changes);
+      
+      // Show toast notification for stage changes
+      if (changes.type === 'stage_completed') {
+        toast({
+          title: "Stage Completed!",
+          description: `${changes.stage.name} has been completed. Progress updated to ${changes.newProgress}%`,
+        });
+      } else if (changes.type === 'stage_started') {
+        toast({
+          title: "Stage Started",
+          description: `Work has begun on ${changes.stage.name}`,
+        });
+      }
+
+      // Reload data to reflect changes
+      await loadData();
+    });
+
+    return unsubscribe;
+  }, [loadData, toast]);
 
   const calculateProjectProgress = () => {
-    if (stages.length === 0) return 0;
-    const completedStages = stages.filter(stage => stage.status === 'completed').length;
-    return Math.round((completedStages / stages.length) * 100);
+    return realProgress; // Use intelligent progress calculation from stage manager
   };
 
   const projectProgress = calculateProjectProgress();
