@@ -1,10 +1,12 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageSquare, FolderOpen } from "lucide-react";
+import { Plus } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import NotificationBell from "./NotificationBell";
+import SlackIcon from "../icons/SlackIcon";
+import GoogleDriveIcon from "../icons/GoogleDriveIcon";
 
 export default function ProjectHeader({ project, onOpenOutOfScopeForm }) {
   const milestoneDays = project?.milestone_date
@@ -24,13 +26,13 @@ export default function ProjectHeader({ project, onOpenOutOfScopeForm }) {
                 <NotificationBell />
                 <Button variant="outline" asChild>
                   <a href="https://slack.com/app_redirect?channel=C123456789" target="_blank" rel="noopener noreferrer">
-                    <MessageSquare className="w-4 h-4 mr-2" />
+                    <SlackIcon className="w-4 h-4 mr-2" />
                     Slack
                   </a>
                 </Button>
                 <Button variant="outline" asChild>
                   <a href="https://drive.google.com/drive/folders/your-project-folder-id" target="_blank" rel="noopener noreferrer">
-                    <FolderOpen className="w-4 h-4 mr-2" />
+                    <GoogleDriveIcon className="w-4 h-4 mr-2" />
                     Drive
                   </a>
                 </Button>
