@@ -81,8 +81,19 @@ export default function Dashboard() {
         }
       }
 
-      // Reload data to reflect changes
-      await loadData();
+      // Only reload stages and progress, not everything
+      const [stagesData, projectData] = await Promise.all([
+        Stage.list('order_index'),
+        Project.list().then(p => p[0])
+      ]);
+      setStages(stagesData || []);
+      if (projectData) {
+        setProject(projectData);
+      }
+      
+      // Update real progress
+      const progress = await stageManager.calculateRealProgress();
+      setRealProgress(progress);
     });
 
     return unsubscribe;

@@ -3,11 +3,14 @@
  * Visual lines and arrows showing stage dependencies
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 
 const DependencyConnections = ({ stages, selectedStageId, hoveredStageId }) => {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
+  
+  // Only recalculate when stages actually change
+  const stageIds = useMemo(() => stages.map(s => s.id).join(','), [stages]);
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current) return;
@@ -48,7 +51,7 @@ const DependencyConnections = ({ stages, selectedStageId, hoveredStageId }) => {
       }
     }
 
-  }, [stages, selectedStageId, hoveredStageId]);
+  }, [stageIds, selectedStageId, hoveredStageId]);
 
   const drawStageConnections = (svg, targetStage, allStages, stagePositions) => {
     const targetPos = stagePositions.get(targetStage.id);

@@ -1,5 +1,5 @@
 
-import React from "react";
+import React, { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -209,14 +209,14 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
     }
   ];
 
-  // Calculate dependency-aware stats
-  const dependencyAwareStats = {
+  // Calculate dependency-aware stats - memoized to prevent recalculation
+  const dependencyAwareStats = useMemo(() => ({
     total: stages.length,
     ready: stages.filter(s => getDependencyStatus(s, stages) === 'ready').length,
     blocked: stages.filter(s => getDependencyStatus(s, stages) === 'blocked').length,
     completed: stages.filter(s => s.status === 'completed').length,
     in_progress: stages.filter(s => s.status === 'in_progress').length,
-  };
+  }), [stages]);
 
   return (
     <div className="relative space-y-8">
