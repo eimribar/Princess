@@ -9,7 +9,7 @@ import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
 import RequiresAttentionWidget from "../components/dashboard/RequiresAttentionWidget";
 import DeliverablesStatusWidget from "../components/dashboard/DeliverablesStatusWidget";
-import StageSidebar from "../components/dashboard/StageSidebar";
+import StageSidebarV2 from "../components/dashboard/StageSidebarV2";
 import OutOfScopeForm from "../components/dashboard/OutOfScopeForm";
 import { Progress } from "@/components/ui/progress";
 import { Loader2 } from "lucide-react";
@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [isOutOfScopeFormOpen, setIsOutOfScopeFormOpen] = useState(false);
   const [realProgress, setRealProgress] = useState(0);
   const [lastNotificationTime, setLastNotificationTime] = useState(0);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -195,18 +196,23 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <aside className="w-[380px] flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto h-full">
+      <aside 
+        className={`${isSidebarExpanded ? 'w-[600px]' : 'w-[380px]'} flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto h-full transition-all duration-300`}
+      >
         {selectedStage ? (
-          <StageSidebar 
+          <StageSidebarV2 
                 stage={selectedStage} 
                 stages={stages}
                 comments={stageComments} 
                 onClose={() => {
                   setSelectedStageId(null);
+                  setIsSidebarExpanded(false);
                 }}
                 onAddComment={handleAddComment}
                 onStageUpdate={handleStageUpdate}
                 teamMembers={teamMembers}
+                isExpanded={isSidebarExpanded}
+                onToggleExpand={() => setIsSidebarExpanded(!isSidebarExpanded)}
           />
         ) : (
           <div className="p-8 space-y-8">

@@ -3,7 +3,7 @@ import React, { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Star } from "lucide-react";
+import { Star, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 import { getDependencyStatus } from "./DependencyUtils";
 import DependencyIndicator from "./DependencyIndicator";
@@ -80,13 +80,13 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
 
   return (
     <motion.div
-      className={`flex flex-col items-center gap-2 relative transition-all duration-300 ${isBlocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} pb-12`}
+      className={`flex flex-col items-center gap-2 relative transition-all duration-300 cursor-pointer ${isBlocked ? 'opacity-75' : ''} pb-12`}
       data-stage-id={stage.id}
-      onClick={() => !isBlocked && onClick(stage.id)}
-      onMouseEnter={() => !isBlocked && setHoveredStageId && setHoveredStageId(stage.id)}
+      onClick={() => onClick(stage.id)}
+      onMouseEnter={() => setHoveredStageId && setHoveredStageId(stage.id)}
       onMouseLeave={() => setHoveredStageId && setHoveredStageId(null)}
-      whileHover={!isBlocked ? { scale: 1.05 } : {}}
-      whileTap={!isBlocked ? { scale: 0.95 } : {}}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
     >
       <div className={`
         relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300
@@ -103,9 +103,15 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
           stages={allStages}
         />
 
-        {stage.is_deliverable && !isBlocked && (
+        {stage.is_deliverable && (
           <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-400 rounded-full border-2 border-white flex items-center justify-center">
             <Star className="w-2.5 h-2.5 text-white fill-current" />
+          </div>
+        )}
+        
+        {isBlocked && (
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-gray-400 rounded-full border-2 border-white flex items-center justify-center">
+            <Lock className="w-2.5 h-2.5 text-white" />
           </div>
         )}
       </div>
