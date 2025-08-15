@@ -7,8 +7,8 @@ import { checkAndInitialize } from "@/api/initializeData";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
-import RequiresAttentionWidget from "../components/dashboard/RequiresAttentionWidget";
-import DeliverablesStatusWidget from "../components/dashboard/DeliverablesStatusWidget";
+import PremiumRequiresAttention from "../components/dashboard/PremiumRequiresAttention";
+import PremiumDeliverablesStatus from "../components/dashboard/PremiumDeliverablesStatus";
 import StageSidebarV2 from "../components/dashboard/StageSidebarV2";
 import OutOfScopeForm from "../components/dashboard/OutOfScopeForm";
 import { Progress } from "@/components/ui/progress";
@@ -215,12 +215,12 @@ export default function Dashboard() {
                 onToggleExpand={() => setIsSidebarExpanded(!isSidebarExpanded)}
           />
         ) : (
-          <div className="p-8 space-y-8">
-            <RequiresAttentionWidget 
+          <div className="p-6 space-y-6">
+            <PremiumRequiresAttention 
               deliverables={deliverables} 
               outOfScopeRequests={outOfScopeRequests} 
             />
-            <DeliverablesStatusWidget deliverables={deliverables} />
+            <PremiumDeliverablesStatus deliverables={deliverables} />
           </div>
         )}
       </aside>
