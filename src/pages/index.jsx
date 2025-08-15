@@ -63,21 +63,21 @@ function PagesContent() {
                     <Route path="/" element={<Dashboard />} />
                 
                 
-                <Route path="/Dashboard" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
                 
-                <Route path="/Deliverables" element={<Deliverables />} />
+                <Route path="/deliverables" element={<Deliverables />} />
                 
-                <Route path="/Team" element={<Team />} />
+                <Route path="/team" element={<Team />} />
                 
-                <Route path="/Brandbook" element={<Brandbook />} />
+                <Route path="/brandbook" element={<Brandbook />} />
                 
-                <Route path="/Admin" element={<Admin />} />
+                <Route path="/admin" element={<Admin />} />
                 
-                <Route path="/DeliverableDetail" element={<DeliverableDetail />} />
+                <Route path="/deliverabledetail" element={<DeliverableDetail />} />
                 
-                <Route path="/Timeline" element={<Timeline />} />
+                <Route path="/timeline" element={<Timeline />} />
                 
-                <Route path="/OutofScope" element={<OutofScope />} />
+                <Route path="/outofscope" element={<OutofScope />} />
                 
             </Routes>
         </Layout>
