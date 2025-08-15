@@ -21,6 +21,7 @@ import {
   Send,
   FileText,
   Paperclip,
+  Plus,
   Calendar,
   Info,
   User,
@@ -29,11 +30,14 @@ import {
   GitBranch,
   Users,
   Activity,
-  Video
+  Video,
+  ChevronLeft,
+  ChevronRight,
+  Play
 } from "lucide-react";
 import { format, formatDistanceToNow, isValid } from "date-fns";
 import { Stage, TeamMember, Comment } from "@/api/entities"; // Added Comment
-import CompactStageActions from './CompactStageActions';
+import ProfessionalManagement from './ProfessionalManagement';
 import MiniDependencyMap from './MiniDependencyMap';
 
 // Helper function to find all stages that depend on a given stage, directly or indirectly
@@ -68,6 +72,7 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
   const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
   const [updateMessage, setUpdateMessage] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // loadTeamMembers useEffect and function removed as teamMembers is now a prop
   // useEffect(() => {
@@ -205,7 +210,10 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
   const assignedMember = teamMembers.find(member => member.email === stage.assigned_to);
 
   return (
-    <div className="h-full flex flex-col bg-white/80 backdrop-blur-xl">
+    <div 
+      className="h-full flex flex-col bg-white transition-all duration-300"
+      style={{ width: isExpanded ? '600px' : '380px' }}
+    >
       <CardHeader className="border-b border-slate-200/60 p-4 flex-shrink-0">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -238,23 +246,37 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
               )}
             </div>
           </div>
-          <button 
-            onClick={() => {
-              console.log('X button clicked!');
-              if (onClose) {
-                onClose();
-              }
-            }}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-            style={{ 
-              position: 'relative',
-              zIndex: 10000,
-              pointerEvents: 'auto'
-            }}
-            type="button"
-          >
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              type="button"
+              title={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              {isExpanded ? (
+                <ChevronRight className="w-5 h-5 text-gray-600" />
+              ) : (
+                <ChevronLeft className="w-5 h-5 text-gray-600" />
+              )}
+            </button>
+            <button 
+              onClick={() => {
+                console.log('X button clicked!');
+                if (onClose) {
+                  onClose();
+                }
+              }}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              style={{ 
+                position: 'relative',
+                zIndex: 10000,
+                pointerEvents: 'auto'
+              }}
+              type="button"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
         </div>
 
         {/* Update Message */}
@@ -281,8 +303,8 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
       </CardHeader>
 
       {/* Management Section */}
-      <div className="px-4 py-4 border-b border-slate-200/60">
-        <CompactStageActions 
+      <div className="p-4 border-b border-gray-200">
+        <ProfessionalManagement 
           stage={stage}
           allStages={stages}
           onStageUpdate={onStageUpdate}
@@ -292,63 +314,88 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
 
       {/* Tabbed Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-4 px-6">
-          <TabsTrigger value="overview" className="text-xs">
-            <Info className="w-3 h-3 mr-1" />
+        <TabsList className="grid w-full grid-cols-4 px-4 bg-gray-50">
+          <TabsTrigger value="overview" className="text-sm">
+            <Info className="w-4 h-4 mr-1.5" />
             Overview
           </TabsTrigger>
-          <TabsTrigger value="dependencies" className="text-xs">
-            <GitBranch className="w-3 h-3 mr-1" />
+          <TabsTrigger value="dependencies" className="text-sm">
+            <GitBranch className="w-4 h-4 mr-1.5" />
             Dependencies
           </TabsTrigger>
-          <TabsTrigger value="resources" className="text-xs">
-            <Users className="w-3 h-3 mr-1" />
+          <TabsTrigger value="resources" className="text-sm">
+            <Paperclip className="w-4 h-4 mr-1.5" />
             Resources
           </TabsTrigger>
-          <TabsTrigger value="activity" className="text-xs">
-            <Activity className="w-3 h-3 mr-1" />
+          <TabsTrigger value="activity" className="text-sm">
+            <Activity className="w-4 h-4 mr-1.5" />
             Activity
           </TabsTrigger>
         </TabsList>
 
         <ScrollArea className="flex-1">
-          <TabsContent value="overview" className="p-6 space-y-8 mt-0">
+          <TabsContent value="overview" className="p-4 space-y-4 mt-0">
             {/* Details Section */}
-            <div className="space-y-4">
-              <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-                <Info className="w-4 h-4 text-slate-400" />
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
+                <Info className="w-4 h-4 text-gray-400" />
                 <span>Details</span>
               </h4>
-            {stage.formal_name && stage.formal_name !== stage.name && (
-              <div>
-                <p className="text-xs text-slate-500 font-medium">Formal Name</p>
-                <p className="text-slate-700 font-medium">{stage.formal_name}</p>
+              <div className="space-y-3">
+                {stage.formal_name && stage.formal_name !== stage.name && (
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium mb-1">Formal Name</p>
+                    <p className="text-gray-900 text-sm">{stage.formal_name}</p>
+                  </div>
+                )}
+                {stage.description && (
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium mb-1">Description</p>
+                    <p className="text-gray-700 text-sm leading-relaxed">{stage.description}</p>
+                  </div>
+                )}
+                {isValid(deadlineDate) && (
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium mb-1">Deadline</p>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-gray-400"/>
+                      <span className="text-sm text-gray-700">
+                        {format(deadlineDate, 'MMMM d, yyyy')}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-            {stage.description && (
-              <div>
-                <p className="text-xs text-slate-500 font-medium">Description</p>
-                <p className="text-slate-600 text-sm leading-relaxed">{stage.description}</p>
+            </div>
+            
+            {/* Video Placeholder */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
+                <Video className="w-4 h-4 text-gray-400" />
+                <span>Project Video</span>
+              </h4>
+              <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <button className="bg-white/90 backdrop-blur rounded-full p-4 shadow-lg hover:bg-white transition-colors">
+                    <Play className="w-8 h-8 text-gray-700 ml-1" />
+                  </button>
+                </div>
+                <div className="absolute bottom-4 left-4 right-4">
+                  <p className="text-sm text-gray-600 bg-white/90 backdrop-blur rounded px-3 py-2">
+                    Introduction to {stage.name}
+                  </p>
+                </div>
               </div>
-            )}
-            {isValid(deadlineDate) && (
-              <div className="flex items-center gap-2 pt-2">
-                <Calendar className="w-4 h-4 text-slate-400"/>
-                <span className="text-sm text-slate-600">
-                  Due: <span className="font-medium text-slate-800">{format(deadlineDate, 'MMMM d, yyyy')}</span>
-                </span>
-              </div>
-            )}
             </div>
             
             {/* Visual Example */}
             {stage.visual_example_url && (
-              <div className="space-y-3">
-                <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-                  <FileText className="w-4 h-4 text-slate-400" />
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
+                  <FileText className="w-4 h-4 text-gray-400" />
                   <span>What to Expect</span>
                 </h4>
-                <div className="rounded-lg overflow-hidden border border-slate-200/60">
+                <div className="rounded-lg overflow-hidden border border-gray-200">
                   <img src={stage.visual_example_url} alt={`Example for ${stage.name}`} className="w-full h-auto object-cover" />
                 </div>
               </div>
@@ -356,68 +403,27 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
           </TabsContent>
 
           {/* Dependencies Tab */}
-          <TabsContent value="dependencies" className="p-6 mt-0">
-            <MiniDependencyMap 
-              currentStage={stage}
-              allStages={stages}
-            />
+          <TabsContent value="dependencies" className="p-4 mt-0">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <MiniDependencyMap 
+                currentStage={stage}
+                allStages={stages}
+              />
+            </div>
           </TabsContent>
 
           {/* Resources Tab */}
-          <TabsContent value="resources" className="p-6 space-y-6 mt-0">
-            {/* Team Members Section */}
-            <div className="space-y-4">
-              <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-                <Users className="w-4 h-4 text-slate-400" />
-                <span>Team Members</span>
+          <TabsContent value="resources" className="p-4 mt-0">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
+                <Paperclip className="w-4 h-4 text-gray-400" />
+                <span>Resources & Documents</span>
               </h4>
-              {assignedMember ? (
-                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-200">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-12 h-12 border-2 border-white shadow-lg">
-                      <AvatarImage src={assignedMember.profile_image} />
-                      <AvatarFallback className="bg-indigo-100 text-indigo-700 font-bold">
-                        {getInitials(assignedMember.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900">{assignedMember.name}</p>
-                      <p className="text-sm text-gray-600">{assignedMember.email}</p>
-                      <Badge className="mt-1 bg-indigo-100 text-indigo-700 border-indigo-200">
-                        Assigned Lead
-                      </Badge>
-                    </div>
-                  </div>
-                  {assignedMember.video_intro_url && (
-                    <Button 
-                      variant="outline" 
-                      className="w-full mt-3 bg-white hover:bg-indigo-50 border-indigo-200"
-                      asChild
-                    >
-                      <a href={assignedMember.video_intro_url} target="_blank" rel="noopener noreferrer">
-                        <Video className="w-4 h-4 mr-2" />
-                        Watch Introduction Video
-                      </a>
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 text-center py-4 bg-gray-50 rounded-lg">
-                  No team member assigned yet
-                </p>
-              )}
-            </div>
-
-            {/* Resource Links */}
-            {stage.resource_links?.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-                  <Paperclip className="w-4 h-4 text-slate-400" />
-                  <span>Resources</span>
-                </h4>
+              
+              {stage.resource_links?.length > 0 ? (
                 <div className="space-y-2">
                   {stage.resource_links.map((link, index) => (
-                    <Button key={index} variant="outline" asChild className="w-full justify-start text-left bg-white">
+                    <Button key={index} variant="outline" asChild className="w-full justify-start text-left bg-white hover:bg-gray-50">
                       <a href={link} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-4 h-4 mr-2" />
                         {link.split('/').pop() || 'Resource Link'}
@@ -425,12 +431,26 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
                     </Button>
                   ))}
                 </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Paperclip className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No resources attached yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Resources will appear here when added</p>
+                </div>
+              )}
+              
+              {/* Add Resource Placeholder */}
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <Button variant="outline" className="w-full" disabled>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Resource
+                </Button>
               </div>
-            )}
+            </div>
           </TabsContent>
 
           {/* Activity Tab */}
-          <TabsContent value="activity" className="p-6 mt-0">
+          <TabsContent value="activity" className="p-4 mt-0">
             <div className="space-y-4">
             
             {/* New Comment Form */}

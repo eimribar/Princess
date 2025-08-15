@@ -187,7 +187,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <aside className="w-[380px] flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative" style={{ zIndex: 1000 }}>
+      <aside className="w-auto flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative" style={{ zIndex: 1000, minWidth: '380px' }}>
          <AnimatePresence>
           {selectedStage ? (
             <motion.div
