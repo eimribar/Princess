@@ -7,11 +7,25 @@ import { Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { getDependencyStatus } from "./DependencyUtils";
 import DependencyIndicator from "./DependencyIndicator";
-import DependencyConnections from "./DependencyConnections";
 
-const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId }) => {
+const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId, hoveredStageId }) => {
   const dependencyStatus = getDependencyStatus(stage, allStages);
   const isBlocked = dependencyStatus === 'blocked';
+  
+  // Check if this stage is related to the hovered stage
+  const isRelated = useMemo(() => {
+    if (!hoveredStageId) return null;
+    const hoveredStage = allStages.find(s => s.id === hoveredStageId);
+    if (!hoveredStage) return null;
+    
+    // Check if this stage is a dependency of hovered stage
+    if (hoveredStage.dependencies?.includes(stage.id)) return 'dependency';
+    
+    // Check if hovered stage is a dependency of this stage
+    if (stage.dependencies?.includes(hoveredStageId)) return 'dependent';
+    
+    return null;
+  }, [hoveredStageId, stage.id, stage.dependencies, allStages]);
 
   const getStatusConfig = (status, isDeliverable) => {
     const configs = {
@@ -56,9 +70,17 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
   const isActive = isSelected;
   const assignedMember = teamMembers?.find(member => member.email === stage.assigned_to);
 
+  // Apply glow effect based on relationship
+  const getGlowEffect = () => {
+    if (!isRelated) return '';
+    if (isRelated === 'dependency') return 'ring-4 ring-purple-400 ring-opacity-60';
+    if (isRelated === 'dependent') return 'ring-4 ring-blue-400 ring-opacity-60';
+    return '';
+  };
+
   return (
     <motion.div
-      className={`flex flex-col items-center gap-2 relative transition-opacity duration-300 ${isBlocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} pb-12`}
+      className={`flex flex-col items-center gap-2 relative transition-all duration-300 ${isBlocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} pb-12`}
       data-stage-id={stage.id}
       onClick={() => !isBlocked && onClick(stage.id)}
       onMouseEnter={() => !isBlocked && setHoveredStageId && setHoveredStageId(stage.id)}
@@ -69,7 +91,7 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
       <div className={`
         relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300
         ${config.bg} ${config.border} border-2 ${config.shadow} shadow-lg
-        ${isActive ? 'ring-4 ring-indigo-500 ring-offset-2' : ''}
+        ${isActive ? 'ring-4 ring-indigo-500 ring-offset-2' : getGlowEffect()}
       `}>
         <span className={`text-sm font-bold ${config.text}`}>
           {stage.number_index}
@@ -113,7 +135,7 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
   );
 };
 
-const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers, setHoveredStageId }) => {
+const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers, setHoveredStageId, hoveredStageId }) => {
   const phaseStages = stages
     .filter(stage => stage.category === phase.id)
     .sort((a, b) => a.number_index - b.number_index);
@@ -147,6 +169,7 @@ const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMember
               teamMembers={teamMembers}
               allStages={stages} // Pass all stages for dependency checks
               setHoveredStageId={setHoveredStageId}
+              hoveredStageId={hoveredStageId}
             />
           ))}
         </div>
@@ -219,14 +242,7 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
   }), [stages]);
 
   return (
-    <div className="relative space-y-8">
-      {/* Dependency connections overlay */}
-      <DependencyConnections 
-        stages={stages}
-        selectedStageId={selectedStageId}
-        hoveredStageId={hoveredStageId}
-      />
-      
+    <div className="space-y-8">
       {phases.map((phase) => (
         <PhaseSection
           key={phase.id}
@@ -236,6 +252,7 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
           selectedStageId={selectedStageId}
           teamMembers={teamMembers}
           setHoveredStageId={setHoveredStageId}
+          hoveredStageId={hoveredStageId}
         />
       ))}
 

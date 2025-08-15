@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   X, 
   ExternalLink, 
@@ -24,11 +25,16 @@ import {
   Info,
   User,
   CheckSquare,
-  AlertCircle
+  AlertCircle,
+  GitBranch,
+  Users,
+  Activity,
+  Video
 } from "lucide-react";
 import { format, formatDistanceToNow, isValid } from "date-fns";
 import { Stage, TeamMember, Comment } from "@/api/entities"; // Added Comment
-import StageActions from './StageActions';
+import CompactStageActions from './CompactStageActions';
+import MiniDependencyMap from './MiniDependencyMap';
 
 // Helper function to find all stages that depend on a given stage, directly or indirectly
 const findDescendants = (stageId, allStages) => {
@@ -61,6 +67,7 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
   const [updateMessage, setUpdateMessage] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   // loadTeamMembers useEffect and function removed as teamMembers is now a prop
   // useEffect(() => {
@@ -185,11 +192,11 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'completed': return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
-      case 'in_progress': return <Clock className="w-5 h-5 text-blue-500" />;
-      case 'blocked': return <AlertTriangle className="w-5 h-5 text-red-500" />;
-      case 'not_started': return <Clock className="w-5 h-5 text-slate-400" />;
-      default: return <Clock className="w-5 h-5 text-slate-400" />;
+      case 'completed': return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />;
+      case 'in_progress': return <Clock className="w-3.5 h-3.5 text-blue-600" />;
+      case 'blocked': return <AlertTriangle className="w-3.5 h-3.5 text-red-600" />;
+      case 'not_started': return <Clock className="w-3.5 h-3.5 text-slate-500" />;
+      default: return <Clock className="w-3.5 h-3.5 text-slate-500" />;
     }
   };
 
@@ -199,29 +206,31 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
 
   return (
     <div className="h-full flex flex-col bg-white/80 backdrop-blur-xl">
-      <CardHeader className="border-b border-slate-200/60 p-6 flex-shrink-0">
+      <CardHeader className="border-b border-slate-200/60 p-4 flex-shrink-0">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <div className="flex items-center gap-4 mb-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-lg">{stage.number_index}</span>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">{stage.number_index}</span>
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  {stage.is_deliverable && <Star className="w-5 h-5 text-amber-400 fill-current" />}
-                  <CardTitle className="text-xl font-bold text-slate-900">
-                    Step {stage.number_index}
-                  </CardTitle>
-                </div>
-                <p className="text-slate-600 font-medium">{stage.name}</p>
+                <CardTitle className="text-lg font-semibold text-slate-900">
+                  Step {stage.number_index}: {stage.name}
+                </CardTitle>
               </div>
+              {stage.is_deliverable && <Star className="w-4 h-4 text-amber-400 fill-current" />}
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-11">
               {getStatusIcon(stage.status)}
               <Badge variant="outline" className="text-xs font-medium">
                 {stage.status.replace('_', ' ').toUpperCase()}
               </Badge>
+              {stage.category && (
+                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 border-purple-200 capitalize">
+                  {stage.category.replace('_', ' ')}
+                </Badge>
+              )}
               {stage.is_optional && (
                 <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-800 border-amber-200">
                   Optional
@@ -271,24 +280,45 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
         )}
       </CardHeader>
 
-      <ScrollArea className="flex-1">
-        <CardContent className="p-6 space-y-8">
-          {/* Smart Stage Actions */}
-          <StageActions 
-            stage={stage}
-            allStages={stages}
-            onStageUpdate={onStageUpdate}
-            teamMembers={teamMembers}
-          />
+      {/* Management Section */}
+      <div className="px-4 py-4 border-b border-slate-200/60">
+        <CompactStageActions 
+          stage={stage}
+          allStages={stages}
+          onStageUpdate={onStageUpdate}
+          teamMembers={teamMembers}
+        />
+      </div>
 
-          <Separator className="bg-slate-200/60" />
+      {/* Tabbed Content */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <TabsList className="grid w-full grid-cols-4 px-6">
+          <TabsTrigger value="overview" className="text-xs">
+            <Info className="w-3 h-3 mr-1" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="dependencies" className="text-xs">
+            <GitBranch className="w-3 h-3 mr-1" />
+            Dependencies
+          </TabsTrigger>
+          <TabsTrigger value="resources" className="text-xs">
+            <Users className="w-3 h-3 mr-1" />
+            Resources
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="text-xs">
+            <Activity className="w-3 h-3 mr-1" />
+            Activity
+          </TabsTrigger>
+        </TabsList>
 
-          {/* Details Section */}
-          <div className="space-y-4">
-            <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-              <Info className="w-4 h-4 text-slate-400" />
-              <span>Details</span>
-            </h4>
+        <ScrollArea className="flex-1">
+          <TabsContent value="overview" className="p-6 space-y-8 mt-0">
+            {/* Details Section */}
+            <div className="space-y-4">
+              <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
+                <Info className="w-4 h-4 text-slate-400" />
+                <span>Details</span>
+              </h4>
             {stage.formal_name && stage.formal_name !== stage.name && (
               <div>
                 <p className="text-xs text-slate-500 font-medium">Formal Name</p>
@@ -309,51 +339,99 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
                 </span>
               </div>
             )}
-          </div>
-          
-          <Separator className="bg-slate-200/60" />
-          
-          {/* Visual Example */}
-          {stage.visual_example_url && (
-            <div className="space-y-3">
-              <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-                <FileText className="w-4 h-4 text-slate-400" />
-                <span>What to Expect</span>
-              </h4>
-              <div className="rounded-lg overflow-hidden border border-slate-200/60">
-                <img src={stage.visual_example_url} alt={`Example for ${stage.name}`} className="w-full h-auto object-cover" />
-              </div>
             </div>
-          )}
-
-          {/* Resources */}
-          {stage.resource_links?.length > 0 && (
-            <div className="space-y-3">
-              <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-                 <Paperclip className="w-4 h-4 text-slate-400" />
-                <span>Resources</span>
-              </h4>
-              <div className="space-y-2">
-                {stage.resource_links.map((link, index) => (
-                  <Button key={index} variant="outline" asChild className="w-full justify-start text-left bg-white">
-                    <a href={link} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      {link.split('/').pop() || 'Resource Link'}
-                    </a>
-                  </Button>
-                ))}
+            
+            {/* Visual Example */}
+            {stage.visual_example_url && (
+              <div className="space-y-3">
+                <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
+                  <FileText className="w-4 h-4 text-slate-400" />
+                  <span>What to Expect</span>
+                </h4>
+                <div className="rounded-lg overflow-hidden border border-slate-200/60">
+                  <img src={stage.visual_example_url} alt={`Example for ${stage.name}`} className="w-full h-auto object-cover" />
+                </div>
               </div>
+            )}
+          </TabsContent>
+
+          {/* Dependencies Tab */}
+          <TabsContent value="dependencies" className="p-6 mt-0">
+            <MiniDependencyMap 
+              currentStage={stage}
+              allStages={stages}
+            />
+          </TabsContent>
+
+          {/* Resources Tab */}
+          <TabsContent value="resources" className="p-6 space-y-6 mt-0">
+            {/* Team Members Section */}
+            <div className="space-y-4">
+              <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
+                <Users className="w-4 h-4 text-slate-400" />
+                <span>Team Members</span>
+              </h4>
+              {assignedMember ? (
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-200">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="w-12 h-12 border-2 border-white shadow-lg">
+                      <AvatarImage src={assignedMember.profile_image} />
+                      <AvatarFallback className="bg-indigo-100 text-indigo-700 font-bold">
+                        {getInitials(assignedMember.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">{assignedMember.name}</p>
+                      <p className="text-sm text-gray-600">{assignedMember.email}</p>
+                      <Badge className="mt-1 bg-indigo-100 text-indigo-700 border-indigo-200">
+                        Assigned Lead
+                      </Badge>
+                    </div>
+                  </div>
+                  {assignedMember.video_intro_url && (
+                    <Button 
+                      variant="outline" 
+                      className="w-full mt-3 bg-white hover:bg-indigo-50 border-indigo-200"
+                      asChild
+                    >
+                      <a href={assignedMember.video_intro_url} target="_blank" rel="noopener noreferrer">
+                        <Video className="w-4 h-4 mr-2" />
+                        Watch Introduction Video
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 text-center py-4 bg-gray-50 rounded-lg">
+                  No team member assigned yet
+                </p>
+              )}
             </div>
-          )}
 
-          <Separator className="bg-slate-200/60" />
+            {/* Resource Links */}
+            {stage.resource_links?.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
+                  <Paperclip className="w-4 h-4 text-slate-400" />
+                  <span>Resources</span>
+                </h4>
+                <div className="space-y-2">
+                  {stage.resource_links.map((link, index) => (
+                    <Button key={index} variant="outline" asChild className="w-full justify-start text-left bg-white">
+                      <a href={link} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        {link.split('/').pop() || 'Resource Link'}
+                      </a>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
 
-          {/* Activity Feed */}
-          <div className="space-y-4">
-            <h4 className="flex items-center gap-3 font-semibold text-slate-800 text-sm">
-              <MessageCircle className="w-4 h-4 text-slate-400" />
-              <span>Activity</span>
-            </h4>
+          {/* Activity Tab */}
+          <TabsContent value="activity" className="p-6 mt-0">
+            <div className="space-y-4">
             
             {/* New Comment Form */}
             <div className="space-y-2">
@@ -396,8 +474,9 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
               )}
             </div>
           </div>
-        </CardContent>
-      </ScrollArea>
+          </TabsContent>
+        </ScrollArea>
+      </Tabs>
     </div>
   );
 }
