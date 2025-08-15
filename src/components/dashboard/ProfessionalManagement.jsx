@@ -12,7 +12,7 @@ import stageManager from '@/api/stageManager';
 import { getDependencyStatus } from './DependencyUtils';
 import { Stage } from '@/api/entities';
 
-export default function ProfessionalManagement({ stage, allStages, onStageUpdate, teamMembers }) {
+export default function ProfessionalManagement({ stage, allStages, onStageUpdate, teamMembers, isReadOnly = false }) {
   const [dependencyStatus, setDependencyStatus] = useState('not_started');
   const [selectedAssignee, setSelectedAssignee] = useState(stage?.assigned_to || 'unassigned');
   const { toast } = useToast();
@@ -128,8 +128,8 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
         {/* Change Status */}
         <div>
           <label className="text-sm text-gray-600 mb-2 block">Change Status</label>
-          <Select value={currentStatus} onValueChange={handleStatusChange}>
-            <SelectTrigger className="w-full h-10 bg-white border-gray-200">
+          <Select value={currentStatus} onValueChange={handleStatusChange} disabled={isReadOnly}>
+            <SelectTrigger className="w-full h-10 bg-white border-gray-200" disabled={isReadOnly}>
               <SelectValue>
                 {currentStatus === 'completed' && <Check className="w-4 h-4 text-green-600 inline mr-2" />}
                 {getStatusLabel(currentStatus)}
@@ -164,8 +164,8 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
         {/* Assigned To */}
         <div>
           <label className="text-sm text-gray-600 mb-2 block">Assigned To</label>
-          <Select value={selectedAssignee} onValueChange={handleAssigneeChange}>
-            <SelectTrigger className="w-full h-10 bg-white border-gray-200">
+          <Select value={selectedAssignee} onValueChange={handleAssigneeChange} disabled={isReadOnly}>
+            <SelectTrigger className="w-full h-10 bg-white border-gray-200" disabled={isReadOnly}>
               <div className="flex items-center gap-2">
                 {assignedMember && (
                   <Avatar className="w-6 h-6">

@@ -254,17 +254,16 @@ export default function StageSidebarV2({
         )}
       </CardHeader>
 
-      {/* Management Section - Only if not locked */}
-      {canModify && (
-        <div className="p-4 border-b border-gray-200">
-          <ProfessionalManagement 
-            stage={stage}
-            allStages={stages}
-            onStageUpdate={onStageUpdate}
-            teamMembers={teamMembers}
-          />
-        </div>
-      )}
+      {/* Management Section - Always visible */}
+      <div className="p-4 border-b border-gray-200">
+        <ProfessionalManagement 
+          stage={stage}
+          allStages={stages}
+          onStageUpdate={onStageUpdate}
+          teamMembers={teamMembers}
+          isReadOnly={isLocked || stage?.status === 'completed'}
+        />
+      </div>
 
       {/* Simplified Tabs - Only 2 */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
