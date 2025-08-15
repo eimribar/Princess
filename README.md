@@ -48,8 +48,8 @@ Princess transforms the traditional agency-client relationship by providing:
 
 ```bash
 # Clone the repository
-git clone https://github.com/[username]/princess-project.git
-cd princess-project
+git clone https://github.com/eimribar/Princess.git
+cd Princess
 
 # Install dependencies
 npm install
@@ -171,17 +171,23 @@ src/
 
 ## 🌟 Enhanced Features Roadmap
 
-### Phase 1: Foundation (Current)
+### Phase 1: Foundation (Completed)
 - ✅ Basic dashboard and navigation
 - ✅ Simple deliverables management
 - ✅ Team member directory
 - ✅ Admin panel structure
+- ✅ Local storage data persistence
+- ✅ Automatic data initialization (104 stages)
 
-### Phase 2: Core Functionality
-- 🔄 Visual timeline with dependency highlighting
-- 🔄 Real-time notification system
+### Phase 2: Core Functionality (In Progress)
+- ✅ Visual timeline with 5 phases
+- ✅ Circle/star visualization system
+- ✅ Dependency highlighting on hover
+- ✅ Interactive sidebar with tabs
+- ✅ Mini dependency map
+- ✅ Professional management section
 - 🔄 Enhanced version control (V0→V1→V2)
-- 🔄 Interactive sidebar with previews
+- 🔄 Real-time notification system
 
 ### Phase 3: Advanced Features
 - 📋 Email approval workflows
