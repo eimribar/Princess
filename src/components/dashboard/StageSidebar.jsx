@@ -229,19 +229,23 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
               )}
             </div>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onClose && onClose();
+          <button 
+            onClick={() => {
+              console.log('X button clicked!');
+              if (onClose) {
+                onClose();
+              }
             }}
-            className="flex-shrink-0 text-slate-500 hover:text-slate-800 relative z-50"
-            style={{ zIndex: 9999 }}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+            style={{ 
+              position: 'relative',
+              zIndex: 10000,
+              pointerEvents: 'auto'
+            }}
+            type="button"
           >
-            <X className="w-4 h-4" />
-          </Button>
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
         </div>
 
         {/* Update Message */}

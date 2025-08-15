@@ -1,7 +1,7 @@
 // Inspired by react-hot-toast library
 import { useState, useEffect, createContext, useContext } from "react";
 
-const TOAST_LIMIT = 20;
+const TOAST_LIMIT = 3;
 const TOAST_REMOVE_DELAY = 6000;
 
 const actionTypes = {
@@ -110,7 +110,7 @@ function dispatch(action) {
   });
 }
 
-function toast({ ...props }) {
+function toast({ duration = 5000, ...props }) {
   const id = genId();
 
   const update = (props) =>
@@ -133,6 +133,13 @@ function toast({ ...props }) {
       },
     },
   });
+
+  // Auto-dismiss after duration
+  if (duration && duration > 0) {
+    setTimeout(() => {
+      dismiss();
+    }, duration);
+  }
 
   return {
     id,

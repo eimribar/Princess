@@ -63,11 +63,8 @@ export default function Dashboard() {
     const unsubscribe = stageManager.subscribe(async (changes) => {
       console.log('Stage changes detected:', changes);
       
-      // Throttle notifications to prevent spam (max 1 per 2 seconds)
-      const now = Date.now();
-      if (now - lastNotificationTime > 2000) {
-        setLastNotificationTime(now);
-        
+      // Only show notifications for user-initiated actions, not data reloads
+      if (changes.isUserAction !== false) {
         // Show toast notification for stage changes with auto-dismiss
         if (changes.type === 'stage_completed') {
           toast({
@@ -179,7 +176,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <aside className="w-[380px] flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative z-50">
+      <aside className="w-[380px] flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative" style={{ zIndex: 1000 }}>
          <AnimatePresence>
           {selectedStage ? (
             <motion.div
@@ -188,13 +185,17 @@ export default function Dashboard() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="h-full"
+              className="h-full relative"
+              style={{ zIndex: 1001 }}
             >
               <StageSidebar 
                 stage={selectedStage} 
                 stages={stages}
                 comments={stageComments} 
-                onClose={handleCloseSidebar}
+                onClose={() => {
+                  console.log('Close button clicked!');
+                  setSelectedStageId(null);
+                }}
                 onAddComment={handleAddComment}
                 onStageUpdate={handleStageUpdate}
                 teamMembers={teamMembers}
