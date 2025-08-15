@@ -197,9 +197,11 @@ export default function OutofScope() {
                               <StatusIcon className="w-3 h-3 mr-1" />
                               {statusConfig.label}
                             </Badge>
-                            <Badge className={`${getUrgencyColor(request.urgency)} text-xs`}>
-                              {request.urgency.toUpperCase()}
-                            </Badge>
+                            {request.urgency && (
+                              <Badge className={`${getUrgencyColor(request.urgency)} text-xs`}>
+                                {request.urgency.toUpperCase()}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </div>
