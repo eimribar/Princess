@@ -14,7 +14,7 @@ import { Stage } from '@/api/entities';
 
 export default function ProfessionalManagement({ stage, allStages, onStageUpdate, teamMembers }) {
   const [dependencyStatus, setDependencyStatus] = useState('not_started');
-  const [selectedAssignee, setSelectedAssignee] = useState(stage?.assigned_to || '');
+  const [selectedAssignee, setSelectedAssignee] = useState(stage?.assigned_to || 'unassigned');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
   }, [stage, allStages]);
 
   useEffect(() => {
-    setSelectedAssignee(stage?.assigned_to || '');
+    setSelectedAssignee(stage?.assigned_to || 'unassigned');
   }, [stage]);
 
   const handleStatusChange = async (newStatus) => {
@@ -71,10 +71,11 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
     }
   };
 
-  const handleAssigneeChange = async (email) => {
+  const handleAssigneeChange = async (value) => {
     try {
+      const email = value === 'unassigned' ? null : value;
       await Stage.update(stage.id, { assigned_to: email });
-      setSelectedAssignee(email);
+      setSelectedAssignee(value);
       toast({
         title: "Assignee Updated",
         description: email ? "Team member has been assigned" : "Assignment removed",
@@ -108,7 +109,8 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
     return 'not_started';
   };
 
-  const assignedMember = teamMembers.find(member => member.email === selectedAssignee);
+  const assignedMember = selectedAssignee !== 'unassigned' ? 
+    teamMembers.find(member => member.email === selectedAssignee) : null;
   const currentStatus = getCurrentStatus();
 
   return (
@@ -179,7 +181,7 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
               </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">
+              <SelectItem value="unassigned">
                 <span className="text-gray-500">Unassign</span>
               </SelectItem>
               {teamMembers.map(member => (

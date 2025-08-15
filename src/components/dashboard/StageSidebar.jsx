@@ -33,7 +33,8 @@ import {
   Video,
   ChevronLeft,
   ChevronRight,
-  Play
+  Play,
+  Loader2
 } from "lucide-react";
 import { format, formatDistanceToNow, isValid } from "date-fns";
 import { Stage, TeamMember, Comment } from "@/api/entities"; // Added Comment
@@ -72,7 +73,6 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
   const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
   const [updateMessage, setUpdateMessage] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [isExpanded, setIsExpanded] = useState(false);
 
   // loadTeamMembers useEffect and function removed as teamMembers is now a prop
   // useEffect(() => {
@@ -88,7 +88,18 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
   //   }
   // };
 
-  if (!stage) return null;
+  if (!stage) {
+    return (
+      <div className="w-full h-full flex flex-col bg-white">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 text-gray-400 animate-spin mx-auto mb-3" />
+            <p className="text-sm text-gray-500">Loading stage details...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmitComment = async () => {
     if (!newComment.trim()) return;
@@ -210,11 +221,8 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
   const assignedMember = teamMembers.find(member => member.email === stage.assigned_to);
 
   return (
-    <div 
-      className="h-full flex flex-col bg-white transition-all duration-300"
-      style={{ width: isExpanded ? '600px' : '380px' }}
-    >
-      <CardHeader className="border-b border-slate-200/60 p-4 flex-shrink-0">
+    <div className="w-full h-full flex flex-col bg-white">
+      <CardHeader className="border-b border-gray-200 p-4 flex-shrink-0 bg-white">
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
@@ -246,37 +254,17 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-              type="button"
-              title={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
-            >
-              {isExpanded ? (
-                <ChevronRight className="w-5 h-5 text-gray-600" />
-              ) : (
-                <ChevronLeft className="w-5 h-5 text-gray-600" />
-              )}
-            </button>
-            <button 
-              onClick={() => {
-                console.log('X button clicked!');
-                if (onClose) {
-                  onClose();
-                }
-              }}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-              style={{ 
-                position: 'relative',
-                zIndex: 10000,
-                pointerEvents: 'auto'
-              }}
-              type="button"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
+          <button 
+            onClick={() => {
+              if (onClose) {
+                onClose();
+              }
+            }}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            type="button"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
         </div>
 
         {/* Update Message */}

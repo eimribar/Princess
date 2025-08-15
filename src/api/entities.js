@@ -83,6 +83,19 @@ class BaseEntity {
       }, 75);
     });
   }
+
+  async bulkCreate(items) {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const createdItems = [];
+        for (const item of items) {
+          const created = dataStore.create(this.entityType, item);
+          createdItems.push(created);
+        }
+        resolve(createdItems);
+      }, 100);
+    });
+  }
 }
 
 // Project Entity

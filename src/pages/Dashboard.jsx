@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Project, Stage, Comment, Deliverable, TeamMember, OutOfScopeRequest } from "@/api/entities";
 import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
+import { checkAndInitialize } from "@/api/initializeData";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
@@ -31,6 +32,9 @@ export default function Dashboard() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
+      // Initialize data if needed
+      await checkAndInitialize();
+      
       const [projectData, stagesData, commentsData, deliverablesData, teamMembersData, outOfScopeData] = await Promise.all([
         Project.list().then(p => p[0]),
         Stage.list('order_index'),
@@ -161,8 +165,8 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <div className="flex-1 overflow-y-auto">
+    <div className="flex h-screen">
+      <div className="flex-1 overflow-y-auto min-w-0">
         <div className="p-8 lg:p-12 space-y-10">
           <ProjectHeader project={project} onOpenOutOfScopeForm={handleOpenOutOfScopeForm} />
           
@@ -177,57 +181,42 @@ export default function Dashboard() {
           </motion.div>
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}>
-            <VisualTimeline 
-              stages={stages} 
-              onStageClick={handleStageClick} 
-              selectedStageId={selectedStageId}
-              teamMembers={teamMembers}
-            />
+            {stages && stages.length > 0 ? (
+              <VisualTimeline 
+                stages={stages} 
+                onStageClick={handleStageClick} 
+                selectedStageId={selectedStageId}
+                teamMembers={teamMembers}
+              />
+            ) : (
+              <div>No stages available to display</div>
+            )}
           </motion.div>
         </div>
       </div>
 
-      <aside className="w-auto flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative" style={{ zIndex: 1000, minWidth: '380px' }}>
-         <AnimatePresence>
-          {selectedStage ? (
-            <motion.div
-              key={selectedStage.id}
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="h-full relative"
-              style={{ zIndex: 1001 }}
-            >
-              <StageSidebar 
+      <aside className="w-[380px] flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto h-full">
+        {selectedStage ? (
+          <StageSidebar 
                 stage={selectedStage} 
                 stages={stages}
                 comments={stageComments} 
                 onClose={() => {
-                  console.log('Close button clicked!');
                   setSelectedStageId(null);
                 }}
                 onAddComment={handleAddComment}
                 onStageUpdate={handleStageUpdate}
                 teamMembers={teamMembers}
-              />
-            </motion.div>
-          ) : (
-            <motion.div 
-              key="widgets"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="p-8 space-y-8"
-            >
-              <RequiresAttentionWidget 
-                deliverables={deliverables} 
-                outOfScopeRequests={outOfScopeRequests} 
-              />
-              <DeliverablesStatusWidget deliverables={deliverables} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+          />
+        ) : (
+          <div className="p-8 space-y-8">
+            <RequiresAttentionWidget 
+              deliverables={deliverables} 
+              outOfScopeRequests={outOfScopeRequests} 
+            />
+            <DeliverablesStatusWidget deliverables={deliverables} />
+          </div>
+        )}
       </aside>
 
       {project && (
