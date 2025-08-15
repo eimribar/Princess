@@ -70,13 +70,13 @@ export default function Dashboard() {
           toast({
             title: "Stage Completed!",
             description: `${changes.stage.name} has been completed. Progress updated to ${changes.newProgress}%`,
-            duration: 5000, // Auto-dismiss after 5 seconds
+            duration: 3000, // Auto-dismiss after 3 seconds
           });
         } else if (changes.type === 'stage_started') {
           toast({
             title: "Stage Started",
             description: `Work has begun on ${changes.stage.name}`,
-            duration: 4000, // Auto-dismiss after 4 seconds
+            duration: 3000, // Auto-dismiss after 3 seconds
           });
         }
       }

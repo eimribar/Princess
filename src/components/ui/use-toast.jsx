@@ -2,7 +2,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 
 const TOAST_LIMIT = 3;
-const TOAST_REMOVE_DELAY = 6000;
+const TOAST_REMOVE_DELAY = 1000;
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -110,7 +110,7 @@ function dispatch(action) {
   });
 }
 
-function toast({ duration = 5000, ...props }) {
+function toast({ duration = 3000, ...props }) {
   const id = genId();
 
   const update = (props) =>
