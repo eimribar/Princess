@@ -152,7 +152,7 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
                   Completed
                 </span>
               </SelectItem>
-              <SelectItem value="blocked">
+              <SelectItem value="blocked" disabled>
                 <span className="flex items-center">
                   Blocked
                 </span>

@@ -261,7 +261,7 @@ export default function StageSidebarV2({
           allStages={stages}
           onStageUpdate={onStageUpdate}
           teamMembers={teamMembers}
-          isReadOnly={isLocked || stage?.status === 'completed'}
+          isReadOnly={isLocked}
         />
       </div>
 
