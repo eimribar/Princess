@@ -13,7 +13,6 @@ import OutOfScopeForm from "../components/dashboard/OutOfScopeForm";
 import { Progress } from "@/components/ui/progress";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { Toaster } from "@/components/ui/toaster";
 
 export default function Dashboard() {
   const [project, setProject] = useState(null);
@@ -26,6 +25,7 @@ export default function Dashboard() {
   const [selectedStageId, setSelectedStageId] = useState(null);
   const [isOutOfScopeFormOpen, setIsOutOfScopeFormOpen] = useState(false);
   const [realProgress, setRealProgress] = useState(0);
+  const [lastNotificationTime, setLastNotificationTime] = useState(0);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -63,17 +63,25 @@ export default function Dashboard() {
     const unsubscribe = stageManager.subscribe(async (changes) => {
       console.log('Stage changes detected:', changes);
       
-      // Show toast notification for stage changes
-      if (changes.type === 'stage_completed') {
-        toast({
-          title: "Stage Completed!",
-          description: `${changes.stage.name} has been completed. Progress updated to ${changes.newProgress}%`,
-        });
-      } else if (changes.type === 'stage_started') {
-        toast({
-          title: "Stage Started",
-          description: `Work has begun on ${changes.stage.name}`,
-        });
+      // Throttle notifications to prevent spam (max 1 per 2 seconds)
+      const now = Date.now();
+      if (now - lastNotificationTime > 2000) {
+        setLastNotificationTime(now);
+        
+        // Show toast notification for stage changes with auto-dismiss
+        if (changes.type === 'stage_completed') {
+          toast({
+            title: "Stage Completed!",
+            description: `${changes.stage.name} has been completed. Progress updated to ${changes.newProgress}%`,
+            duration: 5000, // Auto-dismiss after 5 seconds
+          });
+        } else if (changes.type === 'stage_started') {
+          toast({
+            title: "Stage Started",
+            description: `Work has begun on ${changes.stage.name}`,
+            duration: 4000, // Auto-dismiss after 4 seconds
+          });
+        }
       }
 
       // Reload data to reflect changes
@@ -81,7 +89,7 @@ export default function Dashboard() {
     });
 
     return unsubscribe;
-  }, [loadData, toast]);
+  }, [loadData, toast, lastNotificationTime]);
 
   const calculateProjectProgress = () => {
     return realProgress; // Use intelligent progress calculation from stage manager
@@ -147,7 +155,6 @@ export default function Dashboard() {
   return (
     <div className="flex h-screen overflow-hidden">
       <div className="flex-1 overflow-y-auto">
-        <Toaster />
         <div className="p-8 lg:p-12 space-y-10">
           <ProjectHeader project={project} onOpenOutOfScopeForm={handleOpenOutOfScopeForm} />
           
