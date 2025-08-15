@@ -32,9 +32,6 @@ dist-ssr/
 # Vercel
 .vercel
 
-# Base44 specific
-.base44/
-
 # Logs
 logs
 *.log

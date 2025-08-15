@@ -21,15 +21,15 @@ Princess transforms the traditional agency-client relationship by providing:
 - **Framer Motion** - Smooth animations and transitions
 - **React Router v7** - Client-side routing
 
-### Backend Integration
-- **Base44 SDK** - Backend-as-a-Service integration
-- **Real-time data** - Live updates and synchronization
-- **Authentication** - Secure user management
+### Backend Architecture
+- **Custom Data Layer** - localStorage-based persistence with API-ready architecture
+- **Real-time data** - Live updates with React state management
+- **Authentication** - Simple session-based authentication
+- **Future-ready** - Easy migration to Supabase, custom API, or other backends
 
 ### Key Dependencies
 ```json
 {
-  "@base44/sdk": "^0.1.2",
   "react": "^18.2.0",
   "react-router-dom": "^7.2.0",
   "framer-motion": "^12.4.7",
@@ -165,7 +165,8 @@ src/
 
 ### State Management
 - React hooks for component state
-- Base44 SDK for server state
+- Custom entity classes for data persistence
+- localStorage for client-side data storage
 - Context API for shared application state
 
 ## 🌟 Enhanced Features Roadmap
