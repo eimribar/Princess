@@ -229,7 +229,17 @@ export default function StageSidebar({ stage, stages, comments, onClose, onAddCo
               )}
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0 text-slate-500 hover:text-slate-800">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onClose && onClose();
+            }}
+            className="flex-shrink-0 text-slate-500 hover:text-slate-800 relative z-50"
+            style={{ zIndex: 9999 }}
+          >
             <X className="w-4 h-4" />
           </Button>
         </div>

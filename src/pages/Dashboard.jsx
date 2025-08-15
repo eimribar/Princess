@@ -179,7 +179,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <aside className="w-[380px] flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative z-20">
+      <aside className="w-[380px] flex-shrink-0 bg-white/60 backdrop-blur-xl border-l border-slate-200/60 overflow-y-auto relative z-50">
          <AnimatePresence>
           {selectedStage ? (
             <motion.div
