@@ -4,6 +4,7 @@ import { Project, Stage, Comment, Deliverable, TeamMember, OutOfScopeRequest } f
 import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
 import { checkAndInitialize } from "@/api/initializeData";
+import { initializeSampleNotifications } from "@/utils/initializeNotifications";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
@@ -35,6 +36,9 @@ export default function Dashboard() {
     try {
       // Initialize data if needed
       await checkAndInitialize();
+      
+      // Initialize sample notifications
+      await initializeSampleNotifications();
       
       const [projectData, stagesData, commentsData, deliverablesData, teamMembersData, outOfScopeData] = await Promise.all([
         Project.list().then(p => p[0]),

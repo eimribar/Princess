@@ -10,18 +10,20 @@ import {
   Clock, 
   AlertTriangle,
   FileText,
-  GitCommit,
-  ArrowRight,
-  Calendar,
-  User,
-  MessageSquare
+  Eye
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
+import FileTypeIcon from './FileTypeIcon';
+import VersionComparison from './VersionComparison';
+import VersionReport from './VersionReport';
 
-export default function VersionControl({ deliverable, onVersionUpload, onApprovalAction }) {
+export default function VersionControl({ deliverable, onVersionUpload, onApprovalAction, onFilePreview, onFileDownload, onVersionRollback, comments = [] }) {
   const versions = deliverable?.versions || [];
   const currentVersion = deliverable?.current_version;
+  const [showComparison, setShowComparison] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [selectedVersions, setSelectedVersions] = useState([]);
   
   const getVersionStatus = (version) => {
     switch (version.status) {
@@ -60,173 +62,117 @@ export default function VersionControl({ deliverable, onVersionUpload, onApprova
 
   return (
     <div className="space-y-6">
-      {/* Header with Progress */}
-      <Card className="border-gray-200">
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <GitCommit className="w-5 h-5 text-gray-600" />
-              Version Control
-            </CardTitle>
-            <div className="flex items-center gap-3">
-              {currentVersion && (
-                <Badge className="bg-blue-50 text-blue-700 border-blue-200">
-                  Current: {currentVersion}
-                </Badge>
-              )}
-              <Button 
-                onClick={() => onVersionUpload && onVersionUpload(getNextVersionNumber())}
-                disabled={!canUploadNewVersion()}
-                className="gap-2"
-                size="sm"
-              >
-                <Upload className="w-4 h-4" />
-                Upload {getNextVersionNumber()}
-              </Button>
-            </div>
-          </div>
-          
-          {/* Progress Bar */}
-          <div className="mt-4">
-            <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>Approval Progress</span>
-              <span>{Math.round(getVersionProgress())}%</span>
-            </div>
-            <Progress value={getVersionProgress()} className="h-2" />
-          </div>
-        </CardHeader>
-      </Card>
+      {/* Simplified Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold text-gray-900">Version History</h2>
+        <div className="flex items-center gap-2">
+          {currentVersion && (
+            <Badge variant="outline" className="text-xs">
+              Current: {currentVersion}
+            </Badge>
+          )}
+          <Button 
+            onClick={() => onVersionUpload && onVersionUpload(getNextVersionNumber())}
+            disabled={!canUploadNewVersion()}
+            size="sm"
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Upload {getNextVersionNumber()}
+          </Button>
+        </div>
+      </div>
 
-      {/* Version Timeline */}
+      {/* Simplified Version Cards */}
       {versions.length > 0 && (
-        <Card className="border-gray-200">
-          <CardHeader>
-            <CardTitle className="text-lg">Version History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {versions.map((version, index) => {
-                const statusConfig = getVersionStatus(version);
-                const StatusIcon = statusConfig.icon;
-                const isLatest = index === versions.length - 1;
-                
-                return (
-                  <motion.div
-                    key={version.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    className={`relative border rounded-lg p-4 ${
-                      isLatest ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'
-                    }`}
-                  >
-                    {/* Version Header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-full ${statusConfig.color.replace('text-', 'text-').replace('border-', 'bg-')}`}>
-                          <StatusIcon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-gray-900">
-                            {version.version_number}
-                            {isLatest && <span className="text-blue-600 ml-2">(Latest)</span>}
-                          </h4>
-                          <Badge variant="outline" className={statusConfig.color}>
-                            {version.status.replace('_', ' ')}
-                          </Badge>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {version.file_url && (
-                          <Button variant="outline" size="sm" className="gap-2">
-                            <Download className="w-4 h-4" />
-                            Download
-                          </Button>
-                        )}
-                        {version.status === 'pending_approval' && onApprovalAction && (
-                          <div className="flex gap-2">
-                            <Button 
-                              onClick={() => onApprovalAction(version.id, 'approve')}
-                              className="bg-green-600 hover:bg-green-700"
-                              size="sm"
-                            >
-                              Approve
-                            </Button>
-                            <Button 
-                              onClick={() => onApprovalAction(version.id, 'decline')}
-                              variant="outline"
-                              size="sm"
-                            >
-                              Decline
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Version Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      {version.uploaded_date && (
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <Calendar className="w-4 h-4" />
-                          <span>Uploaded {format(new Date(version.uploaded_date), 'MMM d, yyyy')}</span>
-                        </div>
-                      )}
-                      
-                      {version.uploaded_by && (
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <User className="w-4 h-4" />
-                          <span>{version.uploaded_by}</span>
-                        </div>
-                      )}
-                      
-                      {version.file_size && (
-                        <div className="flex items-center gap-2 text-gray-600">
-                          <FileText className="w-4 h-4" />
-                          <span>{(version.file_size / 1024 / 1024).toFixed(1)} MB</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Changes Summary */}
-                    {version.changes_summary && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-700">
-                          <strong>Changes:</strong> {version.changes_summary}
-                        </p>
-                      </div>
+        <div className="space-y-3">
+          {versions.map((version, index) => {
+            const isLatest = index === versions.length - 1;
+            
+            return (
+              <div
+                key={version.id}
+                className={`border rounded-lg p-4 ${
+                  isLatest ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full ${
+                      version.status === 'approved' ? 'bg-green-500' : 'bg-amber-500'
+                    }`} />
+                    <h4 className="font-medium text-gray-900">{version.version_number}</h4>
+                    <Badge variant="outline" className="text-xs">
+                      {version.status.replace('_', ' ')}
+                    </Badge>
+                    {version.uploaded_date && (
+                      <span className="text-xs text-gray-500">
+                        {format(new Date(version.uploaded_date), 'MMM d')}
+                      </span>
                     )}
-
-                    {/* Feedback */}
-                    {version.feedback && (
-                      <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
-                        <div className="flex items-start gap-2">
-                          <MessageSquare className="w-4 h-4 text-amber-600 mt-0.5" />
-                          <div>
-                            <p className="text-sm text-amber-800 font-medium">Feedback</p>
-                            <p className="text-sm text-amber-700 mt-1">{version.feedback}</p>
-                            {version.feedback_date && (
-                              <p className="text-xs text-amber-600 mt-2">
-                                {format(new Date(version.feedback_date), 'MMM d, yyyy')} by {version.feedback_by}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    {version.file_url && (
+                      <>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => onFilePreview && onFilePreview(version)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => onFileDownload && onFileDownload(version)}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
-
-                    {/* Connection Line to Next Version */}
-                    {index < versions.length - 1 && (
-                      <div className="absolute left-6 -bottom-4 w-0.5 h-8 bg-gray-300"></div>
+                    {version.status === 'pending_approval' && onApprovalAction && (
+                      <>
+                        <Button 
+                          onClick={() => onApprovalAction(version.id, 'approve')}
+                          className="bg-green-600 hover:bg-green-700"
+                          size="sm"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          onClick={() => onApprovalAction(version.id, 'decline')}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <AlertTriangle className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
-                  </motion.div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
+
+      {/* Version Comparison Modal */}
+      <VersionComparison
+        versions={versions}
+        isOpen={showComparison}
+        onClose={() => setShowComparison(false)}
+        onFilePreview={onFilePreview}
+        onFileDownload={onFileDownload}
+      />
+
+      {/* Version Report Modal */}
+      <VersionReport
+        deliverable={deliverable}
+        versions={versions}
+        comments={comments}
+        isOpen={showReport}
+        onClose={() => setShowReport(false)}
+      />
 
       {/* No Versions State */}
       {versions.length === 0 && (

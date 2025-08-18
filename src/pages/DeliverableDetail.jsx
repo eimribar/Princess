@@ -13,6 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import VersionControl from "@/components/deliverables/VersionControl";
 import VersionUpload from "@/components/deliverables/VersionUpload";
 import ApprovalWorkflow from "@/components/deliverables/ApprovalWorkflow";
+import FilePreview from "@/components/deliverables/FilePreview";
+import StatusIndicator from "@/components/deliverables/StatusIndicator";
+import FileTypeIcon, { FileTypeLabel } from "@/components/deliverables/FileTypeIcon";
+import NotificationService from "@/services/notificationService";
 import {
   ArrowLeft,
   FileText,
@@ -29,7 +33,8 @@ import {
   Upload,
   Clock,
   History,
-  Settings
+  Settings,
+  Eye
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
@@ -50,6 +55,8 @@ export default function DeliverableDetail() {
   const [showVersionUpload, setShowVersionUpload] = useState(false);
   const [uploadingVersionNumber, setUploadingVersionNumber] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [previewFile, setPreviewFile] = useState(null);
+  const [showFilePreview, setShowFilePreview] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -93,19 +100,24 @@ export default function DeliverableDetail() {
     setIsLoading(false);
   };
   
-  const handleAddComment = async () => {
-    if (!newComment.trim() || !deliverable) return;
+  const handleAddComment = async (commentText = null) => {
+    const comment = commentText || newComment;
+    if (!comment.trim() || !deliverable) return;
     setIsSubmitting(true);
     try {
-      await Comment.create({
+      const newCommentObj = await Comment.create({
         deliverable_id: deliverable.id,
         project_id: deliverable.project_id,
-        content: newComment,
+        content: comment,
         author_name: "Current User",
         author_email: "user@deutschco.com",
         log_type: "comment"
       });
-      setNewComment("");
+      
+      // Create notification for comment
+      await NotificationService.notifyCommentAdded(deliverable, newCommentObj);
+      
+      if (!commentText) setNewComment("");
       await loadData(deliverable.id);
     } catch (error) {
       console.error("Error adding comment:", error);
@@ -197,6 +209,9 @@ export default function DeliverableDetail() {
         current_version: versionData.version_number
       });
       
+      // Create notification
+      await NotificationService.notifyVersionUpload(deliverable, versionData);
+      
       // Log the upload as a comment
       await Comment.create({
         deliverable_id: deliverable.id,
@@ -219,6 +234,8 @@ export default function DeliverableDetail() {
 
   const handleApprovalAction = async (versionId, action, feedback = '') => {
     try {
+      const version = deliverable.versions.find(v => v.id === versionId);
+      
       const updatedVersions = deliverable.versions.map(v => {
         if (v.id === versionId) {
           return {
@@ -235,6 +252,13 @@ export default function DeliverableDetail() {
       });
       
       await Deliverable.update(deliverable.id, { versions: updatedVersions });
+      
+      // Create notifications
+      if (action === 'approve') {
+        await NotificationService.notifyVersionApproved(deliverable, version);
+      } else {
+        await NotificationService.notifyVersionDeclined(deliverable, version, 'Current User', feedback);
+      }
       
       // Log the approval action
       await Comment.create({
@@ -259,6 +283,8 @@ export default function DeliverableDetail() {
 
   const handleSubmitForApproval = async (versionId) => {
     try {
+      const version = deliverable.versions.find(v => v.id === versionId);
+      
       const updatedVersions = deliverable.versions.map(v => {
         if (v.id === versionId) {
           return {
@@ -271,11 +297,70 @@ export default function DeliverableDetail() {
       });
       
       await Deliverable.update(deliverable.id, { versions: updatedVersions });
+      
+      // Create notification for approval request
+      await NotificationService.notifyApprovalRequest(deliverable, version);
+      
       await loadData(deliverable.id);
       setUpdateMessage({ type: 'success', text: 'Version submitted for approval!' });
       setTimeout(() => setUpdateMessage(null), 3000);
     } catch (error) {
       console.error('Failed to submit for approval:', error);
+    }
+  };
+
+  const handleFilePreview = (version) => {
+    setPreviewFile(version);
+    setShowFilePreview(true);
+  };
+
+  const handleFileDownload = (version) => {
+    if (version.file_url) {
+      // Create a temporary link to trigger download
+      const link = document.createElement('a');
+      link.href = version.file_url;
+      link.download = version.file_name || `${deliverable.name}_${version.version_number}`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleVersionRollback = async (version) => {
+    if (window.confirm(`Are you sure you want to set ${version.version_number} as the current version? This will rollback from ${deliverable.current_version}.`)) {
+      try {
+        // Update current version
+        await Deliverable.update(deliverable.id, { 
+          current_version: version.version_number 
+        });
+        
+        // Log the rollback action
+        await Comment.create({
+          deliverable_id: deliverable.id,
+          project_id: deliverable.project_id,
+          content: `Version rolled back to ${version.version_number} from ${deliverable.current_version}`,
+          author_name: "Current User",
+          author_email: "user@deutschco.com",
+          log_type: "version_rollback"
+        });
+        
+        // Create notification
+        await NotificationService.notifySystemUpdate(
+          `Version rolled back to ${version.version_number} for "${deliverable.name}"`
+        );
+        
+        await loadData(deliverable.id);
+        setUpdateMessage({ 
+          type: 'success', 
+          text: `Rolled back to ${version.version_number} successfully!` 
+        });
+        setTimeout(() => setUpdateMessage(null), 3000);
+      } catch (error) {
+        console.error('Failed to rollback version:', error);
+        setUpdateMessage({ type: 'error', text: 'Failed to rollback version. Please try again.' });
+        setTimeout(() => setUpdateMessage(null), 3000);
+      }
     }
   };
 
@@ -307,7 +392,7 @@ export default function DeliverableDetail() {
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-8">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <Button variant="outline" onClick={() => navigate(-1)} className="gap-2 mb-6">
             <ArrowLeft className="w-4 h-4" />
@@ -425,29 +510,24 @@ export default function DeliverableDetail() {
         </motion.div>
 
         {/* Tabbed Interface */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-white/60 backdrop-blur-xl border border-white/20">
-            <TabsTrigger value="overview" className="gap-2">
-              <Settings className="w-4 h-4" />
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="versions" className="gap-2">
-              <GitCommit className="w-4 h-4" />
-              Versions
-            </TabsTrigger>
-            <TabsTrigger value="approval" className="gap-2">
-              <Clock className="w-4 h-4" />
-              Approval
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="gap-2">
-              <History className="w-4 h-4" />
-              Activity
-            </TabsTrigger>
-          </TabsList>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+            <TabsList className="grid w-full grid-cols-3 bg-white border border-gray-200 rounded-lg p-1 mb-8">
+              <TabsTrigger value="overview" className="text-sm font-medium">
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="versions" className="text-sm font-medium">
+                Versions
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="text-sm font-medium">
+                Activity
+              </TabsTrigger>
+            </TabsList>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            <div className="lg:col-span-2 space-y-8">
-              <TabsContent value="overview" className="space-y-8 mt-0">
+            <TabsContent value="overview" className="space-y-6 mt-0">
+                {/* Status Overview */}
+                <StatusIndicator deliverable={deliverable} />
+
                 {/* Basic Information */}
                 <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
                   <CardHeader>
@@ -460,7 +540,10 @@ export default function DeliverableDetail() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-slate-700">Type</label>
-                        <p className="text-sm text-slate-600 capitalize">{deliverable.type}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-slate-600 capitalize">{deliverable.type}</p>
+                          <FileTypeLabel fileName={`${deliverable.type}.file`} />
+                        </div>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-slate-700">Priority</label>
@@ -471,8 +554,8 @@ export default function DeliverableDetail() {
                         <p className="text-sm text-slate-600">{deliverable.max_iterations || 3}</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-slate-700">Current Version</label>
-                        <p className="text-sm text-slate-600">{deliverable.current_version || 'None'}</p>
+                        <label className="text-sm font-medium text-slate-700">Total Versions</label>
+                        <p className="text-sm text-slate-600">{deliverable.versions?.length || 0}</p>
                       </div>
                     </div>
                     {deliverable.approval_required_from && (
@@ -489,26 +572,148 @@ export default function DeliverableDetail() {
                     )}
                   </CardContent>
                 </Card>
-              </TabsContent>
 
-              <TabsContent value="versions" className="space-y-8 mt-0">
-                <VersionControl 
-                  deliverable={deliverable}
-                  onVersionUpload={handleVersionUpload}
-                  onApprovalAction={handleApprovalAction}
-                />
-              </TabsContent>
+                {/* Latest Version Information */}
+                {deliverable.versions && deliverable.versions.length > 0 && (() => {
+                  const latestVersion = deliverable.versions[deliverable.versions.length - 1];
+                  const getVersionStatusColor = (status) => {
+                    switch (status) {
+                      case 'approved': return 'bg-green-50 text-green-700 border-green-200';
+                      case 'pending_approval': return 'bg-amber-50 text-amber-700 border-amber-200';
+                      case 'declined': return 'bg-red-50 text-red-700 border-red-200';
+                      case 'draft': 
+                      default: return 'bg-gray-50 text-gray-700 border-gray-200';
+                    }
+                  };
 
-              <TabsContent value="approval" className="space-y-8 mt-0">
-                <ApprovalWorkflow 
-                  deliverable={deliverable}
-                  onApprove={(versionId, feedback) => handleApprovalAction(versionId, 'approve', feedback)}
-                  onDecline={(versionId, feedback) => handleApprovalAction(versionId, 'decline', feedback)}
-                  onSubmitForApproval={handleSubmitForApproval}
-                />
-              </TabsContent>
+                  return (
+                    <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3">
+                          <GitCommit className="w-6 h-6 text-slate-500"/>
+                          Latest Version ({latestVersion.version_number})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <FileTypeIcon 
+                              fileName={latestVersion.file_name} 
+                              fileType={latestVersion.file_type}
+                              size="md"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className={`${getVersionStatusColor(latestVersion.status)} border font-medium`}>
+                                  {latestVersion.status.replace('_', ' ').toUpperCase()}
+                                </Badge>
+                                <span className="text-lg font-semibold text-slate-900">
+                                  {latestVersion.version_number}
+                                </span>
+                              </div>
+                              <p className="text-sm text-slate-600 mt-1">
+                                {latestVersion.file_name}
+                              </p>
+                            </div>
+                          </div>
+                          {latestVersion.file_url && (
+                            <div className="flex gap-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="gap-2"
+                                onClick={() => handleFilePreview(latestVersion)}
+                              >
+                                <Eye className="w-4 h-4" />
+                                Preview
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="gap-2"
+                                onClick={() => handleFileDownload(latestVersion)}
+                              >
+                                <Download className="w-4 h-4" />
+                                Download
+                              </Button>
+                            </div>
+                          )}
+                        </div>
 
-              <TabsContent value="activity" className="space-y-8 mt-0">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          {latestVersion.uploaded_date && (
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">Uploaded</label>
+                              <p className="text-slate-600">
+                                {format(new Date(latestVersion.uploaded_date), 'MMM d, yyyy')}
+                                {latestVersion.uploaded_by && ` by ${latestVersion.uploaded_by}`}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {latestVersion.file_size && (
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">File Size</label>
+                              <p className="text-slate-600">
+                                {(latestVersion.file_size / 1024 / 1024).toFixed(1)} MB
+                              </p>
+                            </div>
+                          )}
+
+                          {latestVersion.status === 'approved' && latestVersion.approval_date && (
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">Approved</label>
+                              <p className="text-slate-600">
+                                {format(new Date(latestVersion.approval_date), 'MMM d, yyyy')}
+                                {latestVersion.approved_by && ` by ${latestVersion.approved_by}`}
+                              </p>
+                            </div>
+                          )}
+
+                          {latestVersion.iteration_count && (
+                            <div>
+                              <label className="text-sm font-medium text-slate-700">Iteration</label>
+                              <p className="text-slate-600">#{latestVersion.iteration_count}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {latestVersion.changes_summary && (
+                          <div>
+                            <label className="text-sm font-medium text-slate-700">Changes Summary</label>
+                            <p className="text-slate-600 bg-slate-50 rounded-lg p-3 mt-1">
+                              {latestVersion.changes_summary}
+                            </p>
+                          </div>
+                        )}
+
+                        {latestVersion.feedback && (
+                          <div>
+                            <label className="text-sm font-medium text-slate-700">Latest Feedback</label>
+                            <p className="text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-3 mt-1">
+                              {latestVersion.feedback}
+                            </p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })()}
+            </TabsContent>
+
+            <TabsContent value="versions" className="space-y-6 mt-0">
+              <VersionControl 
+                deliverable={deliverable}
+                onVersionUpload={handleVersionUpload}
+                onApprovalAction={handleApprovalAction}
+                onFilePreview={handleFilePreview}
+                onFileDownload={handleFileDownload}
+                onVersionRollback={handleVersionRollback}
+                comments={comments}
+              />
+            </TabsContent>
+
+            <TabsContent value="activity" className="space-y-6 mt-0">
                 <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-3">
@@ -543,75 +748,9 @@ export default function DeliverableDetail() {
                     </div>
                   </CardContent>
                 </Card>
-              </TabsContent>
-            </div>
-            
-            <div className="lg:col-span-1 space-y-6">
-              <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-3">
-                      <MessageSquare className="w-6 h-6 text-slate-500" />
-                      Quick Comments
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Textarea
-                        placeholder="Add a comment or log an update..."
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        className="min-h-[80px] resize-none bg-white"
-                      />
-                      <Button
-                        onClick={handleAddComment}
-                        disabled={!newComment.trim() || isSubmitting}
-                        className="w-full gap-2"
-                      >
-                        <Send className="w-4 h-4" />
-                        {isSubmitting ? 'Posting...' : 'Post Comment'}
-                      </Button>
-                    </div>
-                    <Separator />
-                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                      {comments.slice(0, 3).map(comment => (
-                        <div key={comment.id} className="flex items-start gap-3">
-                           <Avatar className="w-6 h-6 border">
-                            <AvatarImage />
-                            <AvatarFallback className="text-xs bg-slate-100 font-semibold text-slate-600">
-                               {getInitials(comment.author_name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <div className="bg-slate-100 rounded-lg px-2 py-1">
-                               <p className="text-xs text-slate-700 leading-relaxed">
-                                {comment.content.length > 60 ? comment.content.substring(0, 60) + '...' : comment.content}
-                              </p>
-                            </div>
-                             <p className="text-xs text-slate-500 mt-1">
-                                {formatDistanceToNow(new Date(comment.created_date), { addSuffix: true })}
-                              </p>
-                          </div>
-                        </div>
-                      ))}
-                      {comments.length === 0 && (
-                        <p className="text-sm text-slate-500 text-center py-4">No comments yet.</p>
-                      )}
-                      {comments.length > 3 && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => setActiveTab('activity')}
-                          className="w-full text-xs"
-                        >
-                          View all {comments.length} comments
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-              </Card>
-            </div>
-          </div>
+            </TabsContent>
         </Tabs>
+        </motion.div>
 
         {/* Version Upload Modal */}
         {showVersionUpload && (
@@ -622,6 +761,18 @@ export default function DeliverableDetail() {
             onClose={() => setShowVersionUpload(false)}
           />
         )}
+
+        {/* File Preview Modal */}
+        <FilePreview 
+          file={previewFile}
+          isOpen={showFilePreview}
+          onClose={() => {
+            setShowFilePreview(false);
+            setPreviewFile(null);
+          }}
+          onDownload={handleFileDownload}
+        />
+
       </div>
     </div>
   );

@@ -143,23 +143,111 @@ export async function initializeAppData() {
     // Step 5: Create deliverables for stages marked as deliverables
     console.log('Creating deliverables...');
     const deliverableStages = createdStages.filter(stage => stage.is_deliverable);
-    const deliverablesToCreate = deliverableStages.map(stage => ({
-      project_id: projectId,
-      stage_id: stage.id,
-      name: stage.name,
-      type: stage.category === 'research' ? 'research' : 
-            stage.category === 'strategy' ? 'strategy' : 'creative',
-      include_in_brandbook: stage.category === 'brand_building' || 
-                           stage.name.toLowerCase().includes('brandbook'),
-      max_revisions: 2,
-      status: 'not_started',
-      versions: [],
-      current_version: null,
-      max_iterations: 3,
-      approval_required_from: ['client@deutschco.com'],
-      approval_deadline: null,
-      priority: 'medium'
-    }));
+    
+    // Sample file URLs for demo purposes
+    const sampleFiles = [
+      { 
+        name: 'brand_strategy_v1.pdf', 
+        url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+        type: 'application/pdf',
+        size: 245760
+      },
+      { 
+        name: 'logo_concepts.png', 
+        url: 'https://picsum.photos/800/600?random=1',
+        type: 'image/png',
+        size: 512000
+      },
+      { 
+        name: 'color_palette.jpg', 
+        url: 'https://picsum.photos/800/600?random=2',
+        type: 'image/jpeg',
+        size: 384000
+      },
+      { 
+        name: 'brand_presentation.pdf', 
+        url: 'https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf',
+        type: 'application/pdf',
+        size: 1048576
+      },
+      { 
+        name: 'mood_board.jpg', 
+        url: 'https://picsum.photos/1200/800?random=3',
+        type: 'image/jpeg',
+        size: 768000
+      }
+    ];
+
+    const deliverablesToCreate = deliverableStages.map((stage, index) => {
+      // Add sample versions for some deliverables to demonstrate functionality
+      const shouldHaveVersions = index < 5; // First 5 deliverables get sample versions
+      let versions = [];
+      let currentVersion = null;
+      
+      if (shouldHaveVersions) {
+        const file = sampleFiles[index % sampleFiles.length];
+        const baseDate = new Date(Date.now() - (index + 1) * 24 * 60 * 60 * 1000); // Days ago
+        
+        versions = [
+          {
+            id: `v${stage.id}_1`,
+            version_number: 'V0',
+            status: 'draft',
+            file_name: file.name,
+            file_url: file.url,
+            file_size: file.size,
+            file_type: file.type,
+            uploaded_date: new Date(baseDate.getTime() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours before base
+            uploaded_by: 'Sarah Johnson',
+            changes_summary: 'Initial draft version for client review',
+            iteration_count: 1
+          }
+        ];
+        
+        // Add approved V1 for some deliverables
+        if (index < 3) {
+          versions.push({
+            id: `v${stage.id}_2`,
+            version_number: 'V1',
+            status: 'approved',
+            file_name: file.name.replace(/\.(pdf|png|jpg)$/, '_v1.$1'),
+            file_url: file.url,
+            file_size: file.size + 50000,
+            file_type: file.type,
+            uploaded_date: baseDate.toISOString(),
+            uploaded_by: 'Sarah Johnson',
+            approval_date: new Date(baseDate.getTime() + 1 * 60 * 60 * 1000).toISOString(), // 1 hour after upload
+            approved_by: 'John Smith',
+            changes_summary: 'Incorporated client feedback and refined design',
+            feedback: 'Great improvements! The color palette works well with our brand vision.',
+            feedback_date: new Date(baseDate.getTime() + 1 * 60 * 60 * 1000).toISOString(),
+            feedback_by: 'John Smith',
+            iteration_count: 2
+          });
+          currentVersion = 'V1';
+        } else {
+          currentVersion = 'V0';
+        }
+      }
+
+      return {
+        project_id: projectId,
+        stage_id: stage.id,
+        name: stage.name,
+        type: stage.category === 'research' ? 'research' : 
+              stage.category === 'strategy' ? 'strategy' : 'creative',
+        include_in_brandbook: stage.category === 'brand_building' || 
+                             stage.name.toLowerCase().includes('brandbook'),
+        max_revisions: 2,
+        status: shouldHaveVersions ? (currentVersion === 'V1' ? 'completed' : 'wip') : 'not_started',
+        versions: versions,
+        current_version: currentVersion,
+        max_iterations: 3,
+        approval_required_from: ['client@deutschco.com'],
+        approval_deadline: null,
+        priority: 'medium'
+      };
+    });
     
     if (deliverablesToCreate.length > 0) {
       await Deliverable.bulkCreate(deliverablesToCreate);

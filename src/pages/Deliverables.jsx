@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from "react";
-import { Deliverable } from "@/api/entities";
+import { Deliverable, Stage } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,8 +40,26 @@ export default function Deliverables() {
   const loadDeliverables = async () => {
     setIsLoading(true);
     try {
-      const data = await Deliverable.list('-created_date');
-      setDeliverables(data || []);
+      // Load both deliverables and stages
+      const [deliverablesData, stagesData] = await Promise.all([
+        Deliverable.list(),
+        Stage.list()
+      ]);
+      
+      // Create a map of stage_id to stage for quick lookup
+      const stageMap = new Map(stagesData.map(stage => [stage.id, stage]));
+      
+      // Enrich deliverables with stage information
+      const enrichedDeliverables = deliverablesData.map(deliverable => {
+        const stage = stageMap.get(deliverable.stage_id);
+        return {
+          ...deliverable,
+          stage_number: stage?.number_index || 999, // Use 999 for missing stages to sort them last
+          stage_name: stage?.name || deliverable.name
+        };
+      });
+      
+      setDeliverables(enrichedDeliverables || []);
     } catch (error) {
       console.error("Error loading deliverables:", error);
     }
@@ -102,12 +120,9 @@ export default function Deliverables() {
     return statusMatch && typeMatch;
   });
 
-  // Sort deliverables chronologically by stage number (assuming we have this info)
-  // For now, we'll sort by creation date, but ideally by step number
+  // Sort deliverables chronologically by stage number (step 1-104)
   const sortedDeliverables = [...filteredDeliverables].sort((a, b) => {
-    // If we had step numbers: return a.step_number - b.step_number;
-    // For now, using created_date as proxy for chronological order
-    return new Date(a.created_date) - new Date(b.created_date);
+    return a.stage_number - b.stage_number;
   });
 
   const deliverableStats = {
@@ -117,29 +132,29 @@ export default function Deliverables() {
     completed: deliverables.filter(d => d.status === 'completed').length,
   };
 
-  // Group deliverables by project phase for better organization
+  // Group deliverables by project phase based on step numbers
   const phases = [
     { 
       name: "Phase 1: Project Setup", 
-      deliverables: sortedDeliverables.slice(0, Math.ceil(sortedDeliverables.length * 0.2)),
+      deliverables: sortedDeliverables.filter(d => d.stage_number <= 25),
       color: "from-slate-100 to-slate-200",
       textColor: "text-slate-700"
     },
     { 
       name: "Phase 2: Research & Discovery", 
-      deliverables: sortedDeliverables.slice(Math.ceil(sortedDeliverables.length * 0.2), Math.ceil(sortedDeliverables.length * 0.5)),
+      deliverables: sortedDeliverables.filter(d => d.stage_number > 25 && d.stage_number <= 50),
       color: "from-blue-50 to-blue-100", 
       textColor: "text-blue-800"
     },
     { 
       name: "Phase 3: Strategy Development", 
-      deliverables: sortedDeliverables.slice(Math.ceil(sortedDeliverables.length * 0.5), Math.ceil(sortedDeliverables.length * 0.7)),
+      deliverables: sortedDeliverables.filter(d => d.stage_number > 50 && d.stage_number <= 75),
       color: "from-indigo-50 to-indigo-100",
       textColor: "text-indigo-800"
     },
     { 
       name: "Phase 4: Creative Execution", 
-      deliverables: sortedDeliverables.slice(Math.ceil(sortedDeliverables.length * 0.7)),
+      deliverables: sortedDeliverables.filter(d => d.stage_number > 75),
       color: "from-rose-50 to-rose-100",
       textColor: "text-rose-800"
     }
@@ -272,9 +287,14 @@ export default function Deliverables() {
                               </TableCell>
                               <TableCell className="py-4">
                                 <div>
-                                  <p className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
-                                    {deliverable.name}
-                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                      #{deliverable.stage_number}
+                                    </span>
+                                    <p className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                                      {deliverable.name}
+                                    </p>
+                                  </div>
                                   {deliverable.include_in_brandbook && (
                                     <div className="flex items-center gap-1 text-xs mt-1 text-amber-600">
                                       <Star className="w-3 h-3" />

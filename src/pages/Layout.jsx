@@ -1,7 +1,7 @@
 
 
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   LayoutGrid,
@@ -15,6 +15,7 @@ import {
   Menu,
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
+import NotificationBell from '@/components/notifications/NotificationBell';
 
 const navigationItems = [
   { name: 'Dashboard', href: 'Dashboard', icon: LayoutGrid },
@@ -28,6 +29,14 @@ const navigationItems = [
 
 export default function Layout({ children, currentPageName }) {
     const location = useLocation();
+    const navigate = useNavigate();
+
+    const handleNotificationClick = (notification) => {
+        // Navigate to the relevant deliverable when notification is clicked
+        if (notification.data?.deliverable_id) {
+            navigate(createPageUrl(`DeliverableDetail?id=${notification.data.deliverable_id}`));
+        }
+    };
 
     return (
         <div className="min-h-screen flex w-full">
@@ -78,16 +87,22 @@ export default function Layout({ children, currentPageName }) {
 
                     {/* Footer */}
                     <div className="p-6 mt-auto border-t border-gray-100/80">
-                        <div className="flex items-center gap-3">
-                            <img 
-                                src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/f603af03a_Proncess.jpg" 
-                                className="w-10 h-10 rounded-full object-cover" 
-                                alt="User Avatar"
-                            />
-                            <div>
-                                <p className="font-semibold text-sm">Maya Cohen</p>
-                                <p className="text-xs text-gray-500">maya@email.com</p>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <img 
+                                    src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/f603af03a_Proncess.jpg" 
+                                    className="w-10 h-10 rounded-full object-cover" 
+                                    alt="User Avatar"
+                                />
+                                <div>
+                                    <p className="font-semibold text-sm">Maya Cohen</p>
+                                    <p className="text-xs text-gray-500">maya@email.com</p>
+                                </div>
                             </div>
+                            <NotificationBell 
+                                onNotificationClick={handleNotificationClick}
+                                className="ml-2"
+                            />
                         </div>
                     </div>
                 </div>
@@ -106,9 +121,14 @@ export default function Layout({ children, currentPageName }) {
                             />
                             <h1 className="text-lg font-semibold text-gray-900">Princess</h1>
                         </div>
-                        <Button variant="ghost" size="sm">
-                            <Menu className="w-5 h-5" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <NotificationBell 
+                                onNotificationClick={handleNotificationClick}
+                            />
+                            <Button variant="ghost" size="sm">
+                                <Menu className="w-5 h-5" />
+                            </Button>
+                        </div>
                     </div>
                 </header>
                 
