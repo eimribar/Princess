@@ -9,6 +9,10 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import VersionControl from "@/components/deliverables/VersionControl";
+import VersionUpload from "@/components/deliverables/VersionUpload";
+import ApprovalWorkflow from "@/components/deliverables/ApprovalWorkflow";
 import {
   ArrowLeft,
   FileText,
@@ -21,7 +25,11 @@ import {
   User,
   GitCommit,
   CheckSquare,
-  CheckCircle2
+  CheckCircle2,
+  Upload,
+  Clock,
+  History,
+  Settings
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
@@ -39,6 +47,9 @@ export default function DeliverableDetail() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
   const [updateMessage, setUpdateMessage] = useState(null);
+  const [showVersionUpload, setShowVersionUpload] = useState(false);
+  const [uploadingVersionNumber, setUploadingVersionNumber] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -170,6 +181,102 @@ export default function DeliverableDetail() {
     
     // Clear message after 3 seconds
     setTimeout(() => setUpdateMessage(null), 3000);
+  };
+
+  const handleVersionUpload = (versionNumber) => {
+    setUploadingVersionNumber(versionNumber);
+    setShowVersionUpload(true);
+  };
+
+  const handleVersionUploadSubmit = async (versionData) => {
+    try {
+      // Update deliverable with new version
+      const updatedVersions = [...(deliverable.versions || []), versionData];
+      await Deliverable.update(deliverable.id, {
+        versions: updatedVersions,
+        current_version: versionData.version_number
+      });
+      
+      // Log the upload as a comment
+      await Comment.create({
+        deliverable_id: deliverable.id,
+        project_id: deliverable.project_id,
+        content: `New version uploaded: ${versionData.version_number} - ${versionData.changes_summary}`,
+        author_name: "Current User",
+        author_email: "user@deutschco.com",
+        log_type: "version_upload"
+      });
+      
+      await loadData(deliverable.id);
+      setShowVersionUpload(false);
+      setActiveTab('versions');
+      setUpdateMessage({ type: 'success', text: `${versionData.version_number} uploaded successfully!` });
+      setTimeout(() => setUpdateMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to upload version:', error);
+    }
+  };
+
+  const handleApprovalAction = async (versionId, action, feedback = '') => {
+    try {
+      const updatedVersions = deliverable.versions.map(v => {
+        if (v.id === versionId) {
+          return {
+            ...v,
+            status: action === 'approve' ? 'approved' : 'declined',
+            feedback: feedback,
+            feedback_date: new Date().toISOString(),
+            feedback_by: 'Current User',
+            approval_date: action === 'approve' ? new Date().toISOString() : null,
+            approved_by: action === 'approve' ? 'Current User' : null
+          };
+        }
+        return v;
+      });
+      
+      await Deliverable.update(deliverable.id, { versions: updatedVersions });
+      
+      // Log the approval action
+      await Comment.create({
+        deliverable_id: deliverable.id,
+        project_id: deliverable.project_id,
+        content: `Version ${action === 'approve' ? 'approved' : 'declined'}: ${feedback}`,
+        author_name: "Current User",
+        author_email: "user@deutschco.com",
+        log_type: "approval_action"
+      });
+      
+      await loadData(deliverable.id);
+      setUpdateMessage({ 
+        type: 'success', 
+        text: `Version ${action === 'approve' ? 'approved' : 'declined'} successfully!` 
+      });
+      setTimeout(() => setUpdateMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to process approval:', error);
+    }
+  };
+
+  const handleSubmitForApproval = async (versionId) => {
+    try {
+      const updatedVersions = deliverable.versions.map(v => {
+        if (v.id === versionId) {
+          return {
+            ...v,
+            status: 'pending_approval',
+            submitted_date: new Date().toISOString()
+          };
+        }
+        return v;
+      });
+      
+      await Deliverable.update(deliverable.id, { versions: updatedVersions });
+      await loadData(deliverable.id);
+      setUpdateMessage({ type: 'success', text: 'Version submitted for approval!' });
+      setTimeout(() => setUpdateMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to submit for approval:', error);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -317,154 +424,204 @@ export default function DeliverableDetail() {
           </Card>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-          <div className="lg:col-span-2 space-y-8">
-            {/* Version Timeline */}
-            <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <GitCommit className="w-6 h-6 text-slate-500"/>
-                  Version History
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {deliverable.versions && deliverable.versions.length > 0 ? (
-                  <div className="relative pl-6">
-                    <div className="absolute left-[34px] top-4 bottom-4 w-0.5 bg-slate-200 -translate-x-1/2"></div>
-                    {deliverable.versions.map((version, index) => (
-                      <motion.div 
-                        key={index}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className="relative flex items-start gap-6 mb-6 last:mb-0"
-                      >
-                        <div className="absolute left-[34px] top-4 w-4 h-4 bg-slate-200 rounded-full -translate-x-1/2 border-4 border-slate-50"></div>
-                        <Avatar className="w-12 h-12 border">
-                          <AvatarImage />
-                          <AvatarFallback className="bg-slate-100 text-slate-500">
-                            <FileClock className="w-6 h-6"/>
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 pt-1">
-                          <p className="font-semibold text-slate-800">{version.version_name}</p>
-                          <p className="text-sm text-slate-500 mb-3">
-                            Submitted on {format(new Date(version.submission_date), 'MMM d, yyyy')}
-                          </p>
-                          <div className="flex items-center gap-3">
-                            <Badge variant="outline" className={`${getStatusColor(version.status)} font-medium`}>{version.status.replace('_', ' ').toUpperCase()}</Badge>
-                            <Button variant="outline" size="sm" asChild>
-                              <a href={version.file_url} target="_blank" rel="noopener noreferrer">
-                                <Download className="w-3 h-3 mr-2" />
-                                Download
-                              </a>
-                            </Button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-slate-500 text-center py-4">No versions submitted yet.</p>
-                )}
-              </CardContent>
-            </Card>
+        {/* Tabbed Interface */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 bg-white/60 backdrop-blur-xl border border-white/20">
+            <TabsTrigger value="overview" className="gap-2">
+              <Settings className="w-4 h-4" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="versions" className="gap-2">
+              <GitCommit className="w-4 h-4" />
+              Versions
+            </TabsTrigger>
+            <TabsTrigger value="approval" className="gap-2">
+              <Clock className="w-4 h-4" />
+              Approval
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="gap-2">
+              <History className="w-4 h-4" />
+              Activity
+            </TabsTrigger>
+          </TabsList>
 
-            {/* Approval & Feedback Section */}
-            {currentVersion?.status === 'submitted' && (
-              <Card className="bg-white/60 backdrop-blur-xl border border-amber-200/80 shadow-amber-500/5 shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3">
-                    <AlertCircle className="w-6 h-6 text-amber-600" />
-                    Action Required: Review {currentVersion.version_name}
-                  </CardTitle>
-                  <p className="text-sm text-slate-600">
-                    Please provide your feedback by {format(new Date(currentVersion.feedback_deadline), 'EEEE, MMM d')}.
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Textarea
-                    placeholder="Provide your feedback here... Clear feedback helps us move forward effectively."
-                    className="min-h-[120px] bg-white"
-                  />
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                     <div>
-                        <p className="text-sm text-slate-600 font-medium">
-                          {remainingFeedbackRounds} feedback round{remainingFeedbackRounds !== 1 && 's'} remaining.
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">Requesting revisions may impact the project timeline.</p>
-                     </div>
-                    <div className="flex gap-3 flex-shrink-0">
-                      <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
-                        <MessageSquare className="w-4 h-4 mr-2" />
-                        Decline with Feedback
-                      </Button>
-                      <Button className="bg-green-600 hover:bg-green-700">
-                        <Check className="w-4 h-4 mr-2" />
-                        Approve Version
-                      </Button>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="lg:col-span-2 space-y-8">
+              <TabsContent value="overview" className="space-y-8 mt-0">
+                {/* Basic Information */}
+                <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-3">
+                      <FileText className="w-6 h-6 text-slate-500"/>
+                      Deliverable Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-slate-700">Type</label>
+                        <p className="text-sm text-slate-600 capitalize">{deliverable.type}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700">Priority</label>
+                        <p className="text-sm text-slate-600 capitalize">{deliverable.priority || 'Medium'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700">Max Iterations</label>
+                        <p className="text-sm text-slate-600">{deliverable.max_iterations || 3}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-700">Current Version</label>
+                        <p className="text-sm text-slate-600">{deliverable.current_version || 'None'}</p>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-          
-          <div className="lg:col-span-1 space-y-6">
-            <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-3">
-                    <MessageSquare className="w-6 h-6 text-slate-500" />
-                    Activity Log
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Textarea
-                      placeholder="Add a comment or log an update..."
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      className="min-h-[80px] resize-none bg-white"
-                    />
-                    <Button
-                      onClick={handleAddComment}
-                      disabled={!newComment.trim() || isSubmitting}
-                      className="w-full gap-2"
-                    >
-                      <Send className="w-4 h-4" />
-                      {isSubmitting ? 'Posting...' : 'Post Comment'}
-                    </Button>
-                  </div>
-                  <Separator />
-                  <div className="space-y-5 max-h-[400px] overflow-y-auto pr-2">
-                    {comments.map(comment => (
-                      <div key={comment.id} className="flex items-start gap-3">
-                         <Avatar className="w-8 h-8 border">
-                          <AvatarImage />
-                          <AvatarFallback className="text-xs bg-slate-100 font-semibold text-slate-600">
-                             {getInitials(comment.author_name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <div className="bg-slate-100 rounded-lg px-3 py-2">
-                             <p className="text-sm text-slate-700 leading-relaxed">
-                              {comment.content}
-                            </p>
-                          </div>
-                           <p className="text-xs text-slate-500 mt-1.5">
-                              {comment.author_name} • {formatDistanceToNow(new Date(comment.created_date), { addSuffix: true })}
-                            </p>
+                    {deliverable.approval_required_from && (
+                      <div>
+                        <label className="text-sm font-medium text-slate-700">Approval Required From</label>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {deliverable.approval_required_from.map((email, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {email}
+                            </Badge>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                    {comments.length === 0 && (
-                      <p className="text-sm text-slate-500 text-center py-4">No comments on this deliverable yet.</p>
                     )}
-                  </div>
-                </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="versions" className="space-y-8 mt-0">
+                <VersionControl 
+                  deliverable={deliverable}
+                  onVersionUpload={handleVersionUpload}
+                  onApprovalAction={handleApprovalAction}
+                />
+              </TabsContent>
+
+              <TabsContent value="approval" className="space-y-8 mt-0">
+                <ApprovalWorkflow 
+                  deliverable={deliverable}
+                  onApprove={(versionId, feedback) => handleApprovalAction(versionId, 'approve', feedback)}
+                  onDecline={(versionId, feedback) => handleApprovalAction(versionId, 'decline', feedback)}
+                  onSubmitForApproval={handleSubmitForApproval}
+                />
+              </TabsContent>
+
+              <TabsContent value="activity" className="space-y-8 mt-0">
+                <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-3">
+                      <History className="w-6 h-6 text-slate-500"/>
+                      Activity Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {comments.map(comment => (
+                        <div key={comment.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                          <Avatar className="w-8 h-8 border">
+                            <AvatarImage />
+                            <AvatarFallback className="text-xs bg-slate-100 font-semibold text-slate-600">
+                              {getInitials(comment.author_name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-medium text-slate-900">{comment.author_name}</span>
+                              <span className="text-xs text-slate-500">
+                                {formatDistanceToNow(new Date(comment.created_date), { addSuffix: true })}
+                              </span>
+                            </div>
+                            <p className="text-sm text-slate-700">{comment.content}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {comments.length === 0 && (
+                        <p className="text-sm text-slate-500 text-center py-8">No activity yet.</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </div>
+            
+            <div className="lg:col-span-1 space-y-6">
+              <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-3">
+                      <MessageSquare className="w-6 h-6 text-slate-500" />
+                      Quick Comments
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Textarea
+                        placeholder="Add a comment or log an update..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        className="min-h-[80px] resize-none bg-white"
+                      />
+                      <Button
+                        onClick={handleAddComment}
+                        disabled={!newComment.trim() || isSubmitting}
+                        className="w-full gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        {isSubmitting ? 'Posting...' : 'Post Comment'}
+                      </Button>
+                    </div>
+                    <Separator />
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                      {comments.slice(0, 3).map(comment => (
+                        <div key={comment.id} className="flex items-start gap-3">
+                           <Avatar className="w-6 h-6 border">
+                            <AvatarImage />
+                            <AvatarFallback className="text-xs bg-slate-100 font-semibold text-slate-600">
+                               {getInitials(comment.author_name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="bg-slate-100 rounded-lg px-2 py-1">
+                               <p className="text-xs text-slate-700 leading-relaxed">
+                                {comment.content.length > 60 ? comment.content.substring(0, 60) + '...' : comment.content}
+                              </p>
+                            </div>
+                             <p className="text-xs text-slate-500 mt-1">
+                                {formatDistanceToNow(new Date(comment.created_date), { addSuffix: true })}
+                              </p>
+                          </div>
+                        </div>
+                      ))}
+                      {comments.length === 0 && (
+                        <p className="text-sm text-slate-500 text-center py-4">No comments yet.</p>
+                      )}
+                      {comments.length > 3 && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setActiveTab('activity')}
+                          className="w-full text-xs"
+                        >
+                          View all {comments.length} comments
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+              </Card>
+            </div>
           </div>
-        </div>
+        </Tabs>
+
+        {/* Version Upload Modal */}
+        {showVersionUpload && (
+          <VersionUpload
+            deliverable={deliverable}
+            versionNumber={uploadingVersionNumber}
+            onUpload={handleVersionUploadSubmit}
+            onClose={() => setShowVersionUpload(false)}
+          />
+        )}
       </div>
     </div>
   );

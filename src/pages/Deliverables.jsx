@@ -17,7 +17,9 @@ import {
   AlertTriangle,
   Plus,
   Filter,
-  ArrowRight
+  ArrowRight,
+  GitCommit,
+  Upload
 } from "lucide-react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
@@ -67,7 +69,21 @@ export default function Deliverables() {
 
   const getActionRequired = (deliverable) => {
     const latestVersion = deliverable.versions?.[deliverable.versions.length - 1];
-    return latestVersion?.status === 'submitted';
+    return latestVersion?.status === 'pending_approval';
+  };
+
+  const getVersionInfo = (deliverable) => {
+    if (!deliverable.versions || deliverable.versions.length === 0) {
+      return { hasVersions: false, currentVersion: null, totalVersions: 0 };
+    }
+    
+    const latestVersion = deliverable.versions[deliverable.versions.length - 1];
+    return {
+      hasVersions: true,
+      currentVersion: latestVersion.version_number,
+      totalVersions: deliverable.versions.length,
+      latestStatus: latestVersion.status
+    };
   };
 
   const getStatusIcon = (status) => {
@@ -236,64 +252,88 @@ export default function Deliverables() {
                           <TableHead>Deliverable</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Status</TableHead>
+                          <TableHead>Version</TableHead>
                           <TableHead>Due Date</TableHead>
                           <TableHead className="text-center">Action</TableHead>
                           <TableHead className="w-[50px]"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {phase.deliverables.map((deliverable, index) => (
-                          <TableRow
-                            key={deliverable.id}
-                            className="hover:bg-gray-50/60 cursor-pointer group"
-                            onClick={() => navigate(createPageUrl(`DeliverableDetail?id=${deliverable.id}`))}
-                          >
-                            <TableCell className="text-center">
-                              {getStatusIcon(deliverable.status)}
-                            </TableCell>
-                            <TableCell className="py-4">
-                              <div>
-                                <p className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
-                                  {deliverable.name}
-                                </p>
-                                {deliverable.include_in_brandbook && (
-                                  <div className="flex items-center gap-1 text-xs mt-1 text-amber-600">
-                                    <Star className="w-3 h-3" />
-                                    <span>Brandbook</span>
+                        {phase.deliverables.map((deliverable, index) => {
+                          const versionInfo = getVersionInfo(deliverable);
+                          return (
+                            <TableRow
+                              key={deliverable.id}
+                              className="hover:bg-gray-50/60 cursor-pointer group"
+                              onClick={() => navigate(createPageUrl(`DeliverableDetail?id=${deliverable.id}`))}
+                            >
+                              <TableCell className="text-center">
+                                {getStatusIcon(deliverable.status)}
+                              </TableCell>
+                              <TableCell className="py-4">
+                                <div>
+                                  <p className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                                    {deliverable.name}
+                                  </p>
+                                  {deliverable.include_in_brandbook && (
+                                    <div className="flex items-center gap-1 text-xs mt-1 text-amber-600">
+                                      <Star className="w-3 h-3" />
+                                      <span>Brandbook</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={`${getTypeColor(deliverable.type)} border`}>
+                                  {deliverable.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={`${getStatusColor(deliverable.status)} border`}>
+                                  {deliverable.status.replace('_', ' ')}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {versionInfo.hasVersions ? (
+                                  <div className="flex items-center gap-2">
+                                    <GitCommit className="w-4 h-4 text-gray-500" />
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {versionInfo.currentVersion}
+                                    </span>
+                                    {versionInfo.totalVersions > 1 && (
+                                      <Badge variant="outline" className="text-xs bg-gray-50">
+                                        +{versionInfo.totalVersions - 1}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-gray-400">
+                                    <Upload className="w-4 h-4" />
+                                    <span className="text-sm">No versions</span>
                                   </div>
                                 )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={`${getTypeColor(deliverable.type)} border`}>
-                                {deliverable.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={`${getStatusColor(deliverable.status)} border`}>
-                                {deliverable.status.replace('_', ' ')}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {deliverable.due_date ? (
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <Calendar className="w-4 h-4" />
-                                  {format(new Date(deliverable.due_date), 'MMM d')}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {getActionRequired(deliverable) && (
-                                <Badge className="bg-red-500 text-white animate-pulse">Review</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition-colors" />
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              </TableCell>
+                              <TableCell>
+                                {deliverable.due_date ? (
+                                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <Calendar className="w-4 h-4" />
+                                    {format(new Date(deliverable.due_date), 'MMM d')}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {getActionRequired(deliverable) && (
+                                  <Badge className="bg-red-500 text-white animate-pulse">Review</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition-colors" />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </CardContent>

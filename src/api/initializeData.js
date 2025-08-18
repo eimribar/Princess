@@ -152,7 +152,13 @@ export async function initializeAppData() {
       include_in_brandbook: stage.category === 'brand_building' || 
                            stage.name.toLowerCase().includes('brandbook'),
       max_revisions: 2,
-      status: 'not_started'
+      status: 'not_started',
+      versions: [],
+      current_version: null,
+      max_iterations: 3,
+      approval_required_from: ['client@deutschco.com'],
+      approval_deadline: null,
+      priority: 'medium'
     }));
     
     if (deliverablesToCreate.length > 0) {
