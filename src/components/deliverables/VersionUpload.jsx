@@ -167,11 +167,11 @@ export default function VersionUpload({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 20 }}
-          className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
+          className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
-          <Card className="border-0 shadow-none">
-            <CardHeader className="border-b border-gray-200">
+          <Card className="border-0 shadow-none h-full flex flex-col">
+            <CardHeader className="border-b border-gray-200 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl flex items-center gap-2">
                   <Upload className="w-5 h-5 text-blue-600" />
@@ -186,7 +186,7 @@ export default function VersionUpload({
               </Badge>
             </CardHeader>
 
-            <CardContent className="p-6 space-y-6">
+            <CardContent className="p-6 space-y-6 flex-1 overflow-y-auto">
               {/* File Upload Area */}
               <div className="space-y-4">
                 <label className="text-sm font-medium text-gray-700">
@@ -317,30 +317,31 @@ export default function VersionUpload({
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <Button variant="outline" onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleUpload}
-                  disabled={!selectedFile || !changesSummary.trim() || isUploading}
-                  className="gap-2"
-                >
-                  {isUploading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4" />
-                      Upload {versionNumber}
-                    </>
-                  )}
-                </Button>
-              </div>
             </CardContent>
+            
+            {/* Action Buttons - Fixed at bottom */}
+            <div className="flex justify-end gap-3 p-6 pt-4 border-t border-gray-200 flex-shrink-0 bg-white">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleUpload}
+                disabled={!selectedFile || !changesSummary.trim() || isUploading}
+                className="gap-2"
+              >
+                {isUploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    Upload {versionNumber}
+                  </>
+                )}
+              </Button>
+            </div>
           </Card>
         </motion.div>
       </motion.div>
