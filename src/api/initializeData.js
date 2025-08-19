@@ -204,8 +204,9 @@ export async function initializeAppData() {
           }
         ];
         
-        // Add approved V1 for some deliverables
+        // Add different status versions for testing
         if (index < 3) {
+          // First 3 get approved V1
           versions.push({
             id: `v${stage.id}_2`,
             version_number: 'V1',
@@ -225,7 +226,16 @@ export async function initializeAppData() {
             iteration_count: 2
           });
           currentVersion = 'V1';
+        } else if (index === 3) {
+          // 4th deliverable gets submitted status (pending approval)
+          versions[0].status = 'submitted';
+          currentVersion = 'V0';
+        } else if (index === 4) {
+          // 5th deliverable gets pending_approval status
+          versions[0].status = 'pending_approval';
+          currentVersion = 'V0';
         } else {
+          // Others stay as draft
           currentVersion = 'V0';
         }
       }

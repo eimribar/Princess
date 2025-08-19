@@ -693,38 +693,50 @@ export default function DeliverableDetail() {
                             )}
                             
                             {/* Status-based Action Buttons */}
-                            {latestVersion.status === 'draft' && (
-                              <Button 
-                                size="sm" 
-                                className="gap-2 bg-blue-600 hover:bg-blue-700"
-                                onClick={() => handleSubmitForApproval(latestVersion.id)}
-                              >
-                                <Send className="w-4 h-4" />
-                                Submit for Approval
-                              </Button>
-                            )}
-                            
-                            {latestVersion.status === 'pending_approval' && (
-                              <>
-                                <Button 
-                                  size="sm" 
-                                  className="gap-2 bg-green-600 hover:bg-green-700"
-                                  onClick={() => handleQuickApprovalAction('approve', latestVersion)}
-                                >
-                                  <ThumbsUp className="w-4 h-4" />
-                                  Approve
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
-                                  onClick={() => handleQuickApprovalAction('decline', latestVersion)}
-                                >
-                                  <ThumbsDown className="w-4 h-4" />
-                                  Request Changes
-                                </Button>
-                              </>
-                            )}
+                            {(() => {
+                              const versionStatus = latestVersion.status?.toLowerCase();
+                              
+                              // Show Submit button for draft or declined versions
+                              if (versionStatus === 'draft' || versionStatus === 'declined') {
+                                return (
+                                  <Button 
+                                    size="sm" 
+                                    className="gap-2 bg-blue-600 hover:bg-blue-700"
+                                    onClick={() => handleSubmitForApproval(latestVersion.id)}
+                                  >
+                                    <Send className="w-4 h-4" />
+                                    Submit for Approval
+                                  </Button>
+                                );
+                              }
+                              
+                              // Show Approve/Decline buttons for submitted or pending approval
+                              if (versionStatus === 'submitted' || versionStatus === 'pending_approval') {
+                                return (
+                                  <>
+                                    <Button 
+                                      size="sm" 
+                                      className="gap-2 bg-green-600 hover:bg-green-700"
+                                      onClick={() => handleQuickApprovalAction('approve', latestVersion)}
+                                    >
+                                      <ThumbsUp className="w-4 h-4" />
+                                      Approve
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline"
+                                      className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+                                      onClick={() => handleQuickApprovalAction('decline', latestVersion)}
+                                    >
+                                      <ThumbsDown className="w-4 h-4" />
+                                      Request Changes
+                                    </Button>
+                                  </>
+                                );
+                              }
+                              
+                              return null;
+                            })()}
                             
                             {/* Always show comment button */}
                             <Button 
