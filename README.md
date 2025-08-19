@@ -192,6 +192,7 @@ src/
 - ✅ Advanced file preview and download
 - ✅ Version comparison and rollback features
 - ✅ Export functionality (HTML, CSV, JSON)
+- ✅ **Project Management Integration** - Complete approve/decline/comment system in Overview tab
 
 ### Phase 3: Advanced Features
 - 📋 Email approval workflows
@@ -241,6 +242,23 @@ VITE_API_URL=your_api_url_here
 - Write unit tests for complex logic
 - Follow ESLint configuration
 - Maintain component documentation
+
+## 📝 Recent Updates
+
+### Latest - Project Management Integration (v2.1.0) - 2025-08-19
+- **Complete approval workflow in Overview tab** - Approve/decline/comment directly from deliverable overview
+- **Smart action buttons** - Status-based visibility (Submit/Approve/Decline/Comment)  
+- **Enhanced team collaboration** - Quick comment section with recent activity preview
+- **Robust status handling** - Fixed case-sensitive comparison bugs, supports all status types
+- **Seamless UI integration** - Maintains clean design while adding powerful functionality
+
+### Previous - Phase 2 UI Simplification (v2.0.0) - 2025-01-18
+- Simplified tab navigation from 4 to 3 tabs
+- Streamlined version cards with minimal design
+- Removed information overload and dense UI elements
+- Fixed tab overflow and spacing issues
+- Enhanced notification system integration
+- Improved mobile responsiveness
 
 ## 📄 License
 

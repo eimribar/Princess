@@ -5,6 +5,38 @@ All notable changes to the Princess Brand Development Management System will be 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-08-19
+
+### 🎯 Project Management Integration - Overview Tab Enhancement
+
+#### Added
+- **Complete Approve/Decline/Comment System** in Overview Tab
+  - Status-based action buttons (Submit/Approve/Decline/Comment)
+  - Smart button visibility based on version status
+  - Approval dialog with required feedback for declines
+  - Quick comment section with smooth animations
+  - Recent activity preview with team visibility
+
+- **Enhanced Status Handling**
+  - Support for all status types: draft, submitted, pending_approval, approved, declined
+  - Case-insensitive status comparisons for robust functionality
+  - Normalized status checking across all components
+
+#### Changed
+- **Project Management Workflow** - Direct access to approval actions from Overview
+- **User Experience** - No need to navigate between tabs for common actions
+- **Team Collaboration** - Improved visibility of decisions and feedback
+
+#### Fixed
+- **Action Button Visibility** - Fixed case-sensitive status comparison bug
+- **Status Recognition** - Added support for 'submitted' status handling
+- **UI Consistency** - Proper button states and loading indicators
+
+#### Technical Improvements
+- **Data Initialization** - Enhanced test data with multiple status examples
+- **State Management** - Added approval dialog and comment state handling
+- **Animation Integration** - Smooth transitions with Framer Motion
+
 ## [2.0.0] - 2025-01-18
 
 ### 🎨 Major UI Simplification & Enhancement
