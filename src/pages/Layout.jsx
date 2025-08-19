@@ -3,6 +3,8 @@
 import React from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   LayoutGrid,
   FolderKanban,
@@ -13,9 +15,12 @@ import {
   GanttChartSquare,
   GitMerge,
   Menu,
+  Shield,
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
 import NotificationBell from '@/components/notifications/NotificationBell';
+import { useUser } from '@/contexts/UserContext';
+import { getVisibleNavigationItems, getRoleDisplayName, getRoleBadgeColor } from '@/lib/permissions';
 
 const navigationItems = [
   { name: 'Dashboard', href: 'Dashboard', icon: LayoutGrid },
@@ -30,6 +35,7 @@ const navigationItems = [
 export default function Layout({ children, currentPageName }) {
     const location = useLocation();
     const navigate = useNavigate();
+    const { user, setUserRole } = useUser();
 
     const handleNotificationClick = (notification) => {
         // Navigate to the relevant deliverable when notification is clicked
@@ -86,7 +92,50 @@ export default function Layout({ children, currentPageName }) {
                     </nav>
 
                     {/* Footer */}
-                    <div className="p-6 mt-auto border-t border-gray-100/80">
+                    <div className="p-6 mt-auto border-t border-gray-100/80 space-y-4">
+                        {/* Role Selector */}
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 mb-2">
+                                <Shield className="w-4 h-4 text-gray-500" />
+                                <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">Current Role</span>
+                            </div>
+                            <Select value={user?.role} onValueChange={setUserRole}>
+                                <SelectTrigger className="w-full h-9">
+                                    <SelectValue>
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className={`${getRoleBadgeColor(user?.role)} text-xs`}>
+                                                {getRoleDisplayName(user?.role)}
+                                            </Badge>
+                                        </div>
+                                    </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="admin">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="bg-red-100 text-red-800 border-red-300 text-xs">
+                                                Administrator
+                                            </Badge>
+                                        </div>
+                                    </SelectItem>
+                                    <SelectItem value="agency">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300 text-xs">
+                                                Agency Team
+                                            </Badge>
+                                        </div>
+                                    </SelectItem>
+                                    <SelectItem value="client">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
+                                                Client Team
+                                            </Badge>
+                                        </div>
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {/* User Info */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <img 
@@ -95,8 +144,8 @@ export default function Layout({ children, currentPageName }) {
                                     alt="User Avatar"
                                 />
                                 <div>
-                                    <p className="font-semibold text-sm">Maya Cohen</p>
-                                    <p className="text-xs text-gray-500">maya@email.com</p>
+                                    <p className="font-semibold text-sm">{user?.name || 'Maya Cohen'}</p>
+                                    <p className="text-xs text-gray-500">{user?.email || 'maya@email.com'}</p>
                                 </div>
                             </div>
                             <NotificationBell 

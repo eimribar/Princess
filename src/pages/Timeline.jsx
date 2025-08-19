@@ -3,14 +3,18 @@ import { Stage, TeamMember } from "@/api/entities";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { List, CheckCircle2, Clock, AlertTriangle, User, Calendar, Loader2 } from "lucide-react";
+import { GanttChartSquare, List, CheckCircle2, Clock, AlertTriangle, User, Calendar, Loader2, BarChart3 } from "lucide-react";
+import GanttChart from "../components/timeline/GanttChart";
 
 export default function Timeline() {
   const [stages, setStages] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedStageId, setSelectedStageId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -46,6 +50,21 @@ export default function Timeline() {
   
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : '?';
 
+  const handleStageClick = (stageId) => {
+    setSelectedStageId(stageId);
+    // Could open a modal or navigate to stage details
+    console.log('Stage clicked:', stageId);
+  };
+
+  const handleStageUpdate = async (stageId, updates) => {
+    try {
+      await Stage.update(stageId, updates);
+      await loadData(); // Refresh data
+    } catch (error) {
+      console.error('Error updating stage:', error);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-80px)]">
@@ -61,70 +80,106 @@ export default function Timeline() {
         animate={{ opacity: 1, y: 0 }}
         className="space-y-8"
       >
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-            <List className="w-7 h-7 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <BarChart3 className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Project Timeline</h1>
+              <p className="text-slate-600 mt-1">Interactive Gantt chart and detailed stage list view.</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Project Timeline</h1>
-            <p className="text-slate-600 mt-1">A detailed, list-based view of all project stages.</p>
+          
+          <div className="text-right">
+            <div className="text-sm text-slate-600">
+              <span className="font-semibold">{stages.length}</span> total stages
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              {stages.filter(s => s.status === 'completed').length} completed • {' '}
+              {stages.filter(s => s.status === 'in_progress').length} in progress
+            </div>
           </div>
         </div>
 
-        <div className="bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-xl shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader className="bg-slate-50/80">
-              <TableRow>
-                <TableHead className="w-16 text-center">#</TableHead>
-                <TableHead>Stage Name</TableHead>
-                <TableHead className="w-40">Status</TableHead>
-                <TableHead className="w-48">Assigned To</TableHead>
-                <TableHead className="w-40">Due Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stages.map((stage) => {
-                const statusInfo = getStatusInfo(stage.status);
-                const assignedMember = teamMembers.find(m => m.email === stage.assigned_to);
-                return (
-                  <TableRow key={stage.id} className="hover:bg-slate-50/60">
-                    <TableCell className="text-center font-medium text-slate-500">{stage.number_index}</TableCell>
-                    <TableCell className="font-semibold text-slate-800">{stage.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`${statusInfo.bgColor} ${statusInfo.color} border-${statusInfo.color.replace('text-', '')}/20`}>
-                        <statusInfo.icon className="w-3.5 h-3.5 mr-1.5" />
-                        {stage.status.replace('_', ' ')}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {assignedMember ? (
-                        <div className="flex items-center gap-2">
-                          <Avatar className="w-7 h-7">
-                            <AvatarImage src={assignedMember.profile_image} />
-                            <AvatarFallback>{getInitials(assignedMember.name)}</AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium text-slate-700">{assignedMember.name}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 italic">Unassigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {stage.deadline ? (
-                        <div className="flex items-center gap-2 text-slate-600">
-                          <Calendar className="w-4 h-4" />
-                          <span>{format(new Date(stage.deadline), "MMM d, yyyy")}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </TableCell>
+        <Tabs defaultValue="gantt" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2 lg:w-96">
+            <TabsTrigger value="gantt" className="flex items-center gap-2">
+              <GanttChartSquare className="w-4 h-4" />
+              Gantt Chart
+            </TabsTrigger>
+            <TabsTrigger value="list" className="flex items-center gap-2">
+              <List className="w-4 h-4" />
+              List View
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="gantt" className="space-y-6">
+            <GanttChart
+              stages={stages}
+              teamMembers={teamMembers}
+              onStageClick={handleStageClick}
+              onStageUpdate={handleStageUpdate}
+            />
+          </TabsContent>
+
+          <TabsContent value="list" className="space-y-6">
+            <div className="bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-xl shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader className="bg-slate-50/80">
+                  <TableRow>
+                    <TableHead className="w-16 text-center">#</TableHead>
+                    <TableHead>Stage Name</TableHead>
+                    <TableHead className="w-40">Status</TableHead>
+                    <TableHead className="w-48">Assigned To</TableHead>
+                    <TableHead className="w-40">Due Date</TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {stages.map((stage) => {
+                    const statusInfo = getStatusInfo(stage.status);
+                    const assignedMember = teamMembers.find(m => m.email === stage.assigned_to);
+                    return (
+                      <TableRow key={stage.id} className="hover:bg-slate-50/60 cursor-pointer" onClick={() => handleStageClick(stage.id)}>
+                        <TableCell className="text-center font-medium text-slate-500">{stage.number_index}</TableCell>
+                        <TableCell className="font-semibold text-slate-800">{stage.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`${statusInfo.bgColor} ${statusInfo.color} border-${statusInfo.color.replace('text-', '')}/20`}>
+                            <statusInfo.icon className="w-3.5 h-3.5 mr-1.5" />
+                            {stage.status.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {assignedMember ? (
+                            <div className="flex items-center gap-2">
+                              <Avatar className="w-7 h-7">
+                                <AvatarImage src={assignedMember.profile_image} />
+                                <AvatarFallback>{getInitials(assignedMember.name)}</AvatarFallback>
+                              </Avatar>
+                              <span className="font-medium text-slate-700">{assignedMember.name}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic">Unassigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {stage.deadline ? (
+                            <div className="flex items-center gap-2 text-slate-600">
+                              <Calendar className="w-4 h-4" />
+                              <span>{format(new Date(stage.deadline), "MMM d, yyyy")}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        </Tabs>
       </motion.div>
     </div>
   );

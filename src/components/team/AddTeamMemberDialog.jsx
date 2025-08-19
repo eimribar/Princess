@@ -17,14 +17,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TeamMember } from "@/api/entities";
 import { UploadFile } from "@/api/integrations";
 import { Upload, Loader2, X } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded }) {
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     role: "",
     linkedin_url: "",
     is_decision_maker: false,
+    team_type: "agency",
     notification_preferences: {
       email: true,
       sms: false,
@@ -57,13 +60,47 @@ export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded 
     const file = event.target.files[0];
     if (!file) return;
 
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid File",
+        description: "Please select an image file.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Please select an image smaller than 5MB.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsUploadingImage(true);
     try {
-      const result = await UploadFile({ file });
-      setProfileImageUrl(result.file_url);
-      setProfileImage(file);
+      const result = await UploadFile.upload({ file });
+      if (result && result.file_url) {
+        setProfileImageUrl(result.file_url);
+        setProfileImage(file);
+        toast({
+          title: "Upload Successful",
+          description: "Profile image uploaded successfully.",
+          className: "bg-green-500 text-white"
+        });
+      } else {
+        throw new Error("Invalid upload response");
+      }
     } catch (error) {
       console.error("Error uploading image:", error);
+      toast({
+        title: "Upload Failed",
+        description: "Could not upload profile image. Please try again.",
+        variant: "destructive"
+      });
     }
     setIsUploadingImage(false);
   };
@@ -80,6 +117,13 @@ export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded 
       };
 
       await TeamMember.create(memberData);
+      
+      toast({
+        title: "Team Member Added",
+        description: `${formData.name} has been added to the team successfully.`,
+        className: "bg-green-500 text-white"
+      });
+      
       onMemberAdded();
       onOpenChange(false);
       
@@ -90,6 +134,7 @@ export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded 
         role: "",
         linkedin_url: "",
         is_decision_maker: false,
+        team_type: "agency",
         notification_preferences: {
           email: true,
           sms: false,
@@ -100,6 +145,11 @@ export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded 
       setProfileImageUrl("");
     } catch (error) {
       console.error("Error adding team member:", error);
+      toast({
+        title: "Failed to Add Member",
+        description: "Could not add team member. Please try again.",
+        variant: "destructive"
+      });
     }
     setIsSubmitting(false);
   };
@@ -123,7 +173,7 @@ export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded 
               <Avatar className="w-20 h-20 border-4 border-slate-100">
                 <AvatarImage src={profileImageUrl} alt={formData.name} />
                 <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-xl font-semibold">
-                  {formData.name ? getInitials(formData.name) : <Upload className="w-8 h-8" />}
+                  {formData.name ? getInitials(formData.name) : 'TM'}
                 </AvatarFallback>
               </Avatar>
               {isUploadingImage && (
@@ -192,14 +242,31 @@ export default function AddTeamMemberDialog({ open, onOpenChange, onMemberAdded 
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="role">Job Title / Role</Label>
-            <Input
-              id="role"
-              value={formData.role}
-              onChange={(e) => handleInputChange('role', e.target.value)}
-              placeholder="e.g., Creative Director, Project Manager"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="role">Job Title / Role</Label>
+              <Input
+                id="role"
+                value={formData.role}
+                onChange={(e) => handleInputChange('role', e.target.value)}
+                placeholder="e.g., Creative Director"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="team-type">Team Type</Label>
+              <Select
+                value={formData.team_type}
+                onValueChange={(value) => handleInputChange('team_type', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="agency">Agency Team</SelectItem>
+                  <SelectItem value="client">Client Team</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">

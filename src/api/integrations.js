@@ -22,9 +22,38 @@ export class Core {
   };
 
   static UploadFile = class {
-    static async upload(file) {
-      console.warn('File upload integration not implemented yet');
-      return { url: 'https://placeholder.com/file.pdf', id: 'file_123' };
+    static async upload(fileOrObject) {
+      // Handle both { file } object and direct file parameter
+      const file = fileOrObject.file || fileOrObject;
+      
+      if (!file || !file.type) {
+        throw new Error('Invalid file provided');
+      }
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Only image files are supported');
+      }
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('File size must be less than 5MB');
+      }
+      
+      // Create blob URL for local development
+      const url = URL.createObjectURL(file);
+      const id = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      console.log(`File uploaded successfully: ${file.name} (${file.size} bytes)`);
+      
+      return { 
+        file_url: url, 
+        url: url, 
+        id: id,
+        filename: file.name,
+        size: file.size,
+        type: file.type
+      };
     }
   };
 
