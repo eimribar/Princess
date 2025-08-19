@@ -34,7 +34,10 @@ import {
   Clock,
   History,
   Settings,
-  Eye
+  Eye,
+  ThumbsUp,
+  ThumbsDown,
+  X
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
@@ -57,6 +60,12 @@ export default function DeliverableDetail() {
   const [activeTab, setActiveTab] = useState('overview');
   const [previewFile, setPreviewFile] = useState(null);
   const [showFilePreview, setShowFilePreview] = useState(false);
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [approvalAction, setApprovalAction] = useState(null); // 'approve' or 'decline'
+  const [approvalFeedback, setApprovalFeedback] = useState('');
+  const [isProcessingApproval, setIsProcessingApproval] = useState(false);
+  const [quickComment, setQuickComment] = useState('');
+  const [isAddingComment, setIsAddingComment] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -364,6 +373,49 @@ export default function DeliverableDetail() {
     }
   };
 
+  const handleQuickApprovalAction = (action, version) => {
+    setApprovalAction(action);
+    setApprovalFeedback('');
+    setShowApprovalDialog(true);
+  };
+
+  const handleProcessApproval = async () => {
+    if (!approvalAction) return;
+    
+    const latestVersion = deliverable.versions[deliverable.versions.length - 1];
+    if (!latestVersion) return;
+
+    // For decline, feedback is required
+    if (approvalAction === 'decline' && !approvalFeedback.trim()) {
+      return;
+    }
+
+    setIsProcessingApproval(true);
+    try {
+      await handleApprovalAction(latestVersion.id, approvalAction, approvalFeedback);
+      setShowApprovalDialog(false);
+      setApprovalAction(null);
+      setApprovalFeedback('');
+    } catch (error) {
+      console.error('Failed to process approval:', error);
+    } finally {
+      setIsProcessingApproval(false);
+    }
+  };
+
+  const handleQuickComment = async () => {
+    if (!quickComment.trim()) return;
+    setIsAddingComment(true);
+    try {
+      await handleAddComment(quickComment);
+      setQuickComment('');
+    } catch (error) {
+      console.error('Failed to add comment:', error);
+    } finally {
+      setIsAddingComment(false);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'approved':
@@ -616,28 +668,75 @@ export default function DeliverableDetail() {
                               </p>
                             </div>
                           </div>
-                          {latestVersion.file_url && (
-                            <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
+                            {latestVersion.file_url && (
+                              <>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="gap-2"
+                                  onClick={() => handleFilePreview(latestVersion)}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                  Preview
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="gap-2"
+                                  onClick={() => handleFileDownload(latestVersion)}
+                                >
+                                  <Download className="w-4 h-4" />
+                                  Download
+                                </Button>
+                              </>
+                            )}
+                            
+                            {/* Status-based Action Buttons */}
+                            {latestVersion.status === 'draft' && (
                               <Button 
-                                variant="outline" 
                                 size="sm" 
-                                className="gap-2"
-                                onClick={() => handleFilePreview(latestVersion)}
+                                className="gap-2 bg-blue-600 hover:bg-blue-700"
+                                onClick={() => handleSubmitForApproval(latestVersion.id)}
                               >
-                                <Eye className="w-4 h-4" />
-                                Preview
+                                <Send className="w-4 h-4" />
+                                Submit for Approval
                               </Button>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="gap-2"
-                                onClick={() => handleFileDownload(latestVersion)}
-                              >
-                                <Download className="w-4 h-4" />
-                                Download
-                              </Button>
-                            </div>
-                          )}
+                            )}
+                            
+                            {latestVersion.status === 'pending_approval' && (
+                              <>
+                                <Button 
+                                  size="sm" 
+                                  className="gap-2 bg-green-600 hover:bg-green-700"
+                                  onClick={() => handleQuickApprovalAction('approve', latestVersion)}
+                                >
+                                  <ThumbsUp className="w-4 h-4" />
+                                  Approve
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+                                  onClick={() => handleQuickApprovalAction('decline', latestVersion)}
+                                >
+                                  <ThumbsDown className="w-4 h-4" />
+                                  Request Changes
+                                </Button>
+                              </>
+                            )}
+                            
+                            {/* Always show comment button */}
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="gap-2"
+                              onClick={() => setIsAddingComment(!isAddingComment)}
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                              Add Comment
+                            </Button>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -693,6 +792,82 @@ export default function DeliverableDetail() {
                             <p className="text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-3 mt-1">
                               {latestVersion.feedback}
                             </p>
+                          </div>
+                        )}
+
+                        {/* Quick Comment Section */}
+                        {isAddingComment && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="border-t border-slate-200 pt-4"
+                          >
+                            <div className="space-y-3">
+                              <label className="text-sm font-medium text-slate-700">Add Comment</label>
+                              <Textarea
+                                value={quickComment}
+                                onChange={(e) => setQuickComment(e.target.value)}
+                                placeholder="Add your comment or feedback..."
+                                className="min-h-[80px]"
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setIsAddingComment(false);
+                                    setQuickComment('');
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  onClick={handleQuickComment}
+                                  disabled={!quickComment.trim() || isAddingComment}
+                                >
+                                  {isAddingComment ? 'Adding...' : 'Add Comment'}
+                                </Button>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+
+                        {/* Recent Comments Preview */}
+                        {comments.length > 0 && !isAddingComment && (
+                          <div className="border-t border-slate-200 pt-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <label className="text-sm font-medium text-slate-700">Recent Activity</label>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setActiveTab('activity')}
+                                className="text-xs"
+                              >
+                                View all ({comments.length})
+                              </Button>
+                            </div>
+                            <div className="space-y-2">
+                              {comments.slice(0, 2).map(comment => (
+                                <div key={comment.id} className="flex items-start gap-2 p-2 bg-slate-50 rounded">
+                                  <Avatar className="w-6 h-6">
+                                    <AvatarFallback className="text-xs">
+                                      {comment.author_name.split(' ').map(n => n[0]).join('')}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-medium">{comment.author_name}</span>
+                                      <span className="text-xs text-slate-500">
+                                        {formatDistanceToNow(new Date(comment.created_date), { addSuffix: true })}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 mt-1">{comment.content}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </CardContent>
@@ -772,6 +947,82 @@ export default function DeliverableDetail() {
           }}
           onDownload={handleFileDownload}
         />
+
+        {/* Approval Dialog Modal */}
+        {showApprovalDialog && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={() => setShowApprovalDialog(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-lg shadow-xl max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Card className="border-0 shadow-none">
+                <CardHeader className="border-b border-gray-200">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    {approvalAction === 'approve' ? (
+                      <>
+                        <ThumbsUp className="w-5 h-5 text-green-600" />
+                        Approve Version
+                      </>
+                    ) : (
+                      <>
+                        <ThumbsDown className="w-5 h-5 text-amber-600" />
+                        Request Changes
+                      </>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                
+                <CardContent className="p-6 space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      {approvalAction === 'approve' 
+                        ? 'Comments (optional)' 
+                        : 'What changes are needed? *'}
+                    </label>
+                    <Textarea
+                      value={approvalFeedback}
+                      onChange={(e) => setApprovalFeedback(e.target.value)}
+                      placeholder={approvalAction === 'approve' 
+                        ? 'Any additional comments...' 
+                        : 'Describe the changes that need to be made...'}
+                      className="min-h-[100px]"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setShowApprovalDialog(false)}
+                      disabled={isProcessingApproval}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleProcessApproval}
+                      disabled={isProcessingApproval || (approvalAction === 'decline' && !approvalFeedback.trim())}
+                      className={approvalAction === 'approve' 
+                        ? 'bg-green-600 hover:bg-green-700' 
+                        : 'bg-amber-600 hover:bg-amber-700'}
+                    >
+                      {isProcessingApproval ? 'Processing...' : (
+                        approvalAction === 'approve' ? 'Approve' : 'Request Changes'
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </motion.div>
+        )}
 
       </div>
     </div>
