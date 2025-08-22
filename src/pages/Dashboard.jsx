@@ -5,6 +5,7 @@ import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
 import { checkAndInitialize } from "@/api/initializeData";
 import { initializeSampleNotifications } from "@/utils/initializeNotifications";
+import { useProject } from "@/contexts/ProjectContext";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
@@ -17,11 +18,23 @@ import { Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 export default function Dashboard() {
-  const [project, setProject] = useState(null);
-  const [stages, setStages] = useState([]);
+  // Use global state from ProjectContext
+  const { 
+    project: contextProject,
+    stages: contextStages, 
+    deliverables: contextDeliverables, 
+    teamMembers: contextTeamMembers,
+    isLoading: contextLoading,
+    updateStage: globalUpdateStage,
+    reloadData: reloadProjectData
+  } = useProject();
+  
+  // Local state for dashboard-specific data
+  const [project, setProject] = useState(contextProject);
+  const [stages, setStages] = useState(contextStages);
   const [comments, setComments] = useState([]);
-  const [deliverables, setDeliverables] = useState([]);
-  const [teamMembers, setTeamMembers] = useState([]);
+  const [deliverables, setDeliverables] = useState(contextDeliverables);
+  const [teamMembers, setTeamMembers] = useState(contextTeamMembers);
   const [outOfScopeRequests, setOutOfScopeRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedStageId, setSelectedStageId] = useState(null);
@@ -30,6 +43,14 @@ export default function Dashboard() {
   const [lastNotificationTime, setLastNotificationTime] = useState(0);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const { toast } = useToast();
+  
+  // Sync with context when it changes
+  useEffect(() => {
+    setProject(contextProject);
+    setStages(contextStages);
+    setDeliverables(contextDeliverables);
+    setTeamMembers(contextTeamMembers);
+  }, [contextProject, contextStages, contextDeliverables, contextTeamMembers]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -122,8 +143,15 @@ export default function Dashboard() {
     setSelectedStageId(null);
   };
 
-  const handleStageUpdate = async () => {
-    // Reload data when a stage is updated
+  const handleStageUpdate = async (stageId, updates) => {
+    // Use global update from context for synchronization
+    if (stageId && updates) {
+      await globalUpdateStage(stageId, updates);
+    } else {
+      // Fallback to reload if no specific update
+      await reloadProjectData();
+    }
+    // Reload local data like comments
     await loadData();
   };
 

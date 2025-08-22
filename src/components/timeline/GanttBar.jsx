@@ -1,13 +1,29 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { isWithinInterval, isSameDay, startOfDay, endOfDay } from 'date-fns';
-import { Lock, AlertTriangle, CheckCircle, Clock, Star } from 'lucide-react';
+import { isWithinInterval, isSameDay, startOfDay, endOfDay, addDays, differenceInDays, endOfMonth } from 'date-fns';
+import { Lock, AlertTriangle, CheckCircle, Clock, Star, GripVertical } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useDrag, useDrop } from 'react-dnd';
+import { useUser } from '@/contexts/UserContext';
+import { canManageTeamMember } from '@/lib/permissions';
 
-export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onStageUpdate }) {
+export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onStageUpdate, onHover }) {
+  const { user } = useUser();
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeMode, setResizeMode] = useState(null); // 'start' or 'end'
+  const [dragPreview, setDragPreview] = useState(null);
+  const barRef = useRef(null);
+
+  // Check if user can edit this stage
+  const canEdit = canManageTeamMember(user, { team_type: 'agency' }); // Simplified permission check
+  
   const barInfo = useMemo(() => {
     const totalPeriods = timePeriods.length;
     const periodWidth = 100 / totalPeriods; // percentage width per period
+    
+    // Define stage dates at the beginning
+    const stageStartDate = new Date(stage.start_date);
+    const stageEndDate = new Date(stage.end_date);
     
     // Find start and end positions
     let startIndex = -1;
@@ -15,19 +31,29 @@ export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onSta
     
     timePeriods.forEach((period, index) => {
       const periodStart = startOfDay(period);
-      const periodEnd = zoom === 'week' ? endOfDay(new Date(period.getTime() + 6 * 24 * 60 * 60 * 1000)) : endOfDay(period);
+      // Fix: For month view, use endOfMonth to cover the entire month
+      const periodEnd = zoom === 'week' 
+        ? endOfDay(addDays(period, 6))  // Week: 7 days
+        : zoom === 'month' 
+          ? endOfMonth(period)  // Month: entire month
+          : endOfDay(period);  // Day: just that day
       
-      if (startIndex === -1 && (isSameDay(stage.startDate, period) || isWithinInterval(stage.startDate, { start: periodStart, end: periodEnd }))) {
+      if (startIndex === -1 && (isSameDay(stageStartDate, period) || isWithinInterval(stageStartDate, { start: periodStart, end: periodEnd }))) {
         startIndex = index;
       }
       
-      if (isSameDay(stage.endDate, period) || isWithinInterval(stage.endDate, { start: periodStart, end: periodEnd })) {
+      if (isSameDay(stageEndDate, period) || isWithinInterval(stageEndDate, { start: periodStart, end: periodEnd })) {
         endIndex = index;
       }
     });
 
     // If stage is outside visible range, don't show it
     if (startIndex === -1 && endIndex === -1) {
+      // Better debugging to see the actual date mismatch
+      if (stage.number_index === 1) { // Only log once for the first stage
+        console.log('Stage dates:', stageStartDate.toDateString(), 'to', stageEndDate.toDateString());
+        console.log('Timeline showing:', timePeriods[0]?.toDateString(), 'to', timePeriods[timePeriods.length - 1]?.toDateString());
+      }
       return null;
     }
 
@@ -105,19 +131,111 @@ export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onSta
     return 0;
   }, [stage.status]);
 
+  // Drag and Drop functionality
+  const [{ isDragging }, drag] = useDrag({
+    type: 'gantt-bar',
+    item: { 
+      id: stage.id, 
+      stage,
+      originalStart: new Date(stage.start_date),
+      originalEnd: new Date(stage.end_date)
+    },
+    canDrag: canEdit && !isResizing,
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  // Remove the drop functionality from individual bars - this will be handled by the timeline row
+
+  // Resize functionality
+  const handleResizeStart = (mode, e) => {
+    if (!canEdit) return;
+    e.stopPropagation();
+    setIsResizing(true);
+    setResizeMode(mode);
+    
+    const handleMouseMove = (e) => {
+      if (!barRef.current) return;
+      
+      const barRect = barRef.current.getBoundingClientRect();
+      const periodIndex = Math.floor(
+        ((e.clientX - barRect.left) / barRect.width) * timePeriods.length
+      );
+      
+      const newDate = timePeriods[Math.max(0, Math.min(periodIndex, timePeriods.length - 1))];
+      
+      if (mode === 'start') {
+        const stageEndDate = new Date(stage.end_date);
+        if (newDate < stageEndDate) {
+          setDragPreview({ start: newDate, end: stageEndDate });
+        }
+      } else {
+        const stageStartDate = new Date(stage.start_date);
+        if (newDate > stageStartDate) {
+          setDragPreview({ start: stageStartDate, end: newDate });
+        }
+      }
+    };
+    
+    const handleMouseUp = () => {
+      if (dragPreview && onStageUpdate) {
+        onStageUpdate(stage.id, {
+          start_date: dragPreview.start.toISOString(),
+          end_date: dragPreview.end.toISOString()
+        });
+      }
+      setIsResizing(false);
+      setResizeMode(null);
+      setDragPreview(null);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Validate dependencies (basic implementation)
+  const validateDependencies = (stageToMove, newStart, newEnd) => {
+    // TODO: Implement proper dependency validation
+    // For now, just check if the new dates are valid
+    return newStart && newEnd && newStart <= newEnd;
+  };
+
+  // Combine drag ref only (drop is handled by timeline row)
+  const combinedRef = (el) => {
+    barRef.current = el;
+    drag(el);
+  };
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <motion.div
-          className="absolute top-1/2 transform -translate-y-1/2 h-6 cursor-pointer group"
+    <motion.div
+          ref={combinedRef}
+          className={`
+            absolute top-1/2 transform -translate-y-1/2 h-8 group
+            ${canEdit ? 'cursor-move' : 'cursor-pointer'}
+            ${isDragging ? 'opacity-30 cursor-grabbing' : ''}
+          `}
           style={{
             left: barInfo.left,
             width: barInfo.width,
             minWidth: '24px'
           }}
-          whileHover={{ scale: 1.02, zIndex: 10 }}
+          whileHover={{ scale: canEdit ? 1.02 : 1.01, zIndex: 10 }}
           whileTap={{ scale: 0.98 }}
           onClick={handleClick}
+          onMouseEnter={(e) => {
+            if (onHover) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              onHover(stage.id, { x: rect.left + rect.width / 2, y: rect.bottom });
+            }
+          }}
+          onMouseLeave={() => {
+            if (onHover) {
+              onHover(null, null);
+            }
+          }}
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3, delay: stage.number_index * 0.02 }}
@@ -141,9 +259,28 @@ export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onSta
               />
             )}
 
+            {/* Resize Handles */}
+            {canEdit && (
+              <>
+                <div
+                  className="absolute left-0 top-0 w-2 h-full cursor-ew-resize bg-transparent hover:bg-black/20 transition-colors group-hover:visible invisible"
+                  onMouseDown={(e) => handleResizeStart('start', e)}
+                  title="Resize start date"
+                />
+                <div
+                  className="absolute right-0 top-0 w-2 h-full cursor-ew-resize bg-transparent hover:bg-black/20 transition-colors group-hover:visible invisible"
+                  onMouseDown={(e) => handleResizeStart('end', e)}
+                  title="Resize end date"
+                />
+              </>
+            )}
+
+            {/* Remove drag handle text - will show in dependency card instead */}
+            
             {/* Content */}
             <div className="h-full flex items-center justify-between px-2 relative z-10">
               <div className="flex items-center gap-1 overflow-hidden">
+                
                 {stage.is_deliverable && (
                   <Star className="w-3 h-3 text-white fill-current flex-shrink-0" />
                 )}
@@ -173,30 +310,6 @@ export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onSta
             )}
           </div>
 
-          {/* Hover Details */}
-          <div className="absolute -top-8 left-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 pointer-events-none">
-            <div className="bg-slate-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap">
-              {stage.duration} days • {stage.status.replace('_', ' ')}
-            </div>
-          </div>
         </motion.div>
-      </TooltipTrigger>
-      
-      <TooltipContent side="top" className="max-w-xs">
-        <div className="space-y-2">
-          <div className="font-semibold">{stage.name}</div>
-          <div className="text-xs space-y-1">
-            <div>Duration: {stage.duration} days</div>
-            <div>Status: {stage.status.replace('_', ' ')}</div>
-            {stage.assignedMember && (
-              <div>Assigned: {stage.assignedMember.name}</div>
-            )}
-            {stage.dependencies && stage.dependencies.length > 0 && (
-              <div>Dependencies: {stage.dependencies.length} stage(s)</div>
-            )}
-          </div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
   );
 }

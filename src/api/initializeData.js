@@ -5,6 +5,7 @@
 
 import { Project, Stage, Deliverable, TeamMember } from './entities';
 import { playbookData } from '../components/admin/PlaybookData';
+import dateCalculationService from '../services/dateCalculationService';
 
 // Helper function to add a delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -103,42 +104,57 @@ export async function initializeAppData() {
     await Stage.bulkCreate(stagesToCreate);
     console.log('Created stages');
 
-    // Step 4: Resolve stage dependencies
-    console.log('Resolving stage dependencies...');
+    // Step 4: Resolve stage dependencies and calculate dates
+    console.log('Resolving stage dependencies and calculating dates...');
     const createdStages = await Stage.list();
     const numberIndexToIdMap = new Map(createdStages.map(s => [s.number_index, s.id]));
 
-    const stagesToUpdate = createdStages.map(stage => {
+    // First, update all dependencies
+    const stagesWithDependencies = createdStages.map(stage => {
       const playbookItem = playbookData.find(item => item.number_index === stage.number_index);
-      if (!playbookItem) return null;
+      if (!playbookItem) return stage;
 
       const resolvedDependencyIds = (playbookItem.dependencies || []).map(index => numberIndexToIdMap.get(index)).filter(Boolean);
       const resolvedParallelTrackIds = (playbookItem.parallel_tracks || []).map(index => numberIndexToIdMap.get(index)).filter(Boolean);
 
       return {
-        id: stage.id,
+        ...stage,
         dependencies: resolvedDependencyIds,
-        parallel_tracks: resolvedParallelTrackIds
+        parallel_tracks: resolvedParallelTrackIds,
+        estimated_duration: playbookItem.estimated_duration || null
       };
-    }).filter(Boolean);
+    });
 
-    // Process updates sequentially to avoid rate limiting
+    // Calculate dates based on dependencies
+    const projectStart = projects && projects.length > 0 
+      ? new Date(projects[0].start_date) 
+      : new Date();
+    
+    const scheduledStages = dateCalculationService.calculateProjectSchedule(
+      stagesWithDependencies,
+      projectStart
+    );
+
+    // Update all stages with dependencies and calculated dates
     let processedCount = 0;
-    for (const updateItem of stagesToUpdate) {
-      await Stage.update(updateItem.id, { 
-        dependencies: updateItem.dependencies, 
-        parallel_tracks: updateItem.parallel_tracks 
+    for (const stage of scheduledStages) {
+      await Stage.update(stage.id, { 
+        dependencies: stage.dependencies, 
+        parallel_tracks: stage.parallel_tracks,
+        start_date: stage.start_date,
+        end_date: stage.end_date,
+        estimated_duration: stage.estimated_duration || dateCalculationService.getDefaultDuration(stage)
       });
       
       processedCount++;
       if (processedCount % 10 === 0) {
-        console.log(`Linked dependencies for ${processedCount}/${stagesToUpdate.length} stages`);
+        console.log(`Updated ${processedCount}/${scheduledStages.length} stages with dependencies and dates`);
       }
       
       await delay(50); // Small delay to prevent overwhelming localStorage
     }
     
-    console.log('Dependencies resolved');
+    console.log('Dependencies and dates calculated');
 
     // Step 5: Create deliverables for stages marked as deliverables
     console.log('Creating deliverables...');

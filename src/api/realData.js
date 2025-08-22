@@ -8,6 +8,20 @@ import { dataStore } from './entities';
 import { playbookData } from '../components/admin/PlaybookData';
 import { deliverablesByPhase } from '../components/playbook/DeliverablesPlaybookData';
 
+// Calculate realistic project timeline
+const getProjectDates = () => {
+  const startDate = new Date();
+  // A 104-step branding project typically takes 6-9 months with proper dependencies
+  const estimatedEndDate = new Date();
+  estimatedEndDate.setMonth(estimatedEndDate.getMonth() + 8); // 8 months from now
+  
+  return {
+    start_date: startDate.toISOString(),
+    estimated_completion: estimatedEndDate.toISOString(),
+    created_date: startDate.toISOString()
+  };
+};
+
 // Real project data based on the original
 const realProject = {
   id: "proj_princess_001",
@@ -15,10 +29,8 @@ const realProject = {
   client_name: "Deutsch & Co.",
   description: "Brand development process management system - Complete workflow automation for client transparency and project management.",
   status: "in_progress",
-  start_date: "2024-01-15",
-  estimated_completion: "2024-06-30",
+  ...getProjectDates(),
   progress_percentage: calculateInitialProgress(),
-  created_date: "2024-01-15T09:00:00Z",
   updated_date: new Date().toISOString()
 };
 
@@ -28,9 +40,61 @@ function calculateInitialProgress() {
   return Math.round((completedSteps / totalSteps) * 100);
 }
 
+// Helper function to calculate start date based on dependencies
+function calculateStageStartDate(step, allSteps, stageDateMap) {
+  const projectStartDate = new Date();
+  
+  // If no dependencies, start at project start or with phase offset
+  if (!step.dependencies || step.dependencies.length === 0) {
+    // Add phase-based offsets for better visualization
+    let phaseOffset = 0;
+    if (step.category === 'research') phaseOffset = 7;
+    else if (step.category === 'strategy') phaseOffset = 21;
+    else if (step.category === 'brand_building') phaseOffset = 45;
+    else if (step.category === 'brand_collaterals') phaseOffset = 90;
+    else if (step.category === 'brand_activation') phaseOffset = 135;
+    else if (step.category === 'employer_branding') phaseOffset = 180;
+    else if (step.category === 'project_closure') phaseOffset = 210;
+    
+    const startDate = new Date(projectStartDate);
+    startDate.setDate(startDate.getDate() + phaseOffset);
+    return startDate;
+  }
+  
+  // Find the latest end date from all dependencies
+  let latestDependencyEnd = projectStartDate;
+  
+  for (const depNum of step.dependencies) {
+    const depStageId = `stage_${String(depNum).padStart(3, '0')}`;
+    if (stageDateMap[depStageId] && stageDateMap[depStageId].end_date) {
+      const depEndDate = new Date(stageDateMap[depStageId].end_date);
+      if (depEndDate > latestDependencyEnd) {
+        latestDependencyEnd = depEndDate;
+      }
+    }
+  }
+  
+  // Start 1 day after the latest dependency ends
+  const startDate = new Date(latestDependencyEnd);
+  startDate.setDate(startDate.getDate() + 1);
+  return startDate;
+}
+
 // Convert playbook data to Stage entities
 function generateStagesFromPlaybook() {
-  return playbookData.map((step, index) => {
+  const stageDateMap = {}; // Track calculated dates for dependencies
+  
+  // First pass: sort stages by dependencies (topological sort)
+  const sortedSteps = [...playbookData].sort((a, b) => {
+    // Stages without dependencies come first
+    if (!a.dependencies?.length && b.dependencies?.length) return -1;
+    if (a.dependencies?.length && !b.dependencies?.length) return 1;
+    // Then by number index
+    return a.number_index - b.number_index;
+  });
+  
+  // Second pass: calculate dates and create stage objects
+  const stages = sortedSteps.map((step, index) => {
     // Set realistic status based on position
     let status;
     if (step.number_index <= 6) {
@@ -53,6 +117,18 @@ function generateStagesFromPlaybook() {
     const parallelTracks = (step.parallel_tracks || []).map(trackNum =>
       `stage_${String(trackNum).padStart(3, '0')}`
     );
+    
+    // Calculate dates
+    const estimatedDuration = getEstimatedDuration(step);
+    const startDate = calculateStageStartDate(step, sortedSteps, stageDateMap);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + estimatedDuration);
+    
+    // Store dates for dependency calculation
+    stageDateMap[stageId] = {
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString()
+    };
 
     return {
       id: stageId,
@@ -71,11 +147,16 @@ function generateStagesFromPlaybook() {
       resource_dependency: step.resource_dependency || "none",
       project_id: realProject.id,
       assigned_to: getAssignedTeamMember(step),
-      estimated_duration: getEstimatedDuration(step),
+      estimated_duration: estimatedDuration,
+      start_date: stageDateMap[stageId].start_date,
+      end_date: stageDateMap[stageId].end_date,
       created_date: "2024-01-15T09:00:00Z",
       updated_date: new Date().toISOString()
     };
   });
+  
+  // Sort back by number_index for display
+  return stages.sort((a, b) => a.number_index - b.number_index);
 }
 
 function getAssignedTeamMember(step) {
@@ -437,13 +518,31 @@ export function initializeRealData() {
   const hasData = existingData.projects?.length > 0 || 
                   existingData.stages?.length > 0 ||
                   existingData.deliverables?.length > 0;
+  
+  // Check if existing data has invalid dates (temporary fix to force regeneration)
+  let needsRegeneration = false;
+  if (hasData && existingData.stages?.length > 0) {
+    const firstStage = existingData.stages[0];
+    if (!firstStage.start_date || !firstStage.end_date) {
+      console.log('⚠️ Existing stages missing date fields. Regenerating...');
+      needsRegeneration = true;
+    }
+  }
                   
-  if (!hasData) {
-    console.log('📋 No existing data found. Seeding with real playbook data...');
+  if (!hasData || needsRegeneration) {
+    console.log('📋 Seeding with real playbook data...');
     return seedRealData();
   } else {
     console.log('✅ Existing data found. Skipping data seeding.');
     console.log(`📊 Current data: ${existingData.stages?.length || 0} stages, ${existingData.deliverables?.length || 0} deliverables`);
+    // Log a sample stage to verify dates
+    if (existingData.stages?.length > 0) {
+      console.log('Sample stage dates:', {
+        name: existingData.stages[0].name,
+        start_date: existingData.stages[0].start_date,
+        end_date: existingData.stages[0].end_date
+      });
+    }
     return existingData;
   }
 }

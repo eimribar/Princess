@@ -5,35 +5,51 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { GanttChartSquare, List, CheckCircle2, Clock, AlertTriangle, User, Calendar, Loader2, BarChart3 } from "lucide-react";
+import { GanttChartSquare, List, CheckCircle2, Clock, AlertTriangle, User, Calendar, Loader2, BarChart3, Undo, Redo } from "lucide-react";
 import GanttChart from "../components/timeline/GanttChart";
+import ClientFriendlyImpactDialog from "../components/timeline/ClientFriendlyImpactDialog";
+import StageDetailsDialog from "../components/timeline/StageDetailsDialog";
+import { useProject } from "@/contexts/ProjectContext";
+import { toast } from "sonner";
 
 export default function Timeline() {
-  const [stages, setStages] = useState([]);
-  const [teamMembers, setTeamMembers] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { 
+    stages, 
+    teamMembers, 
+    isLoading, 
+    updateStage, 
+    pendingChanges, 
+    applyPendingChanges, 
+    cancelPendingChanges,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    getCriticalPath
+  } = useProject();
+  
   const [selectedStageId, setSelectedStageId] = useState(null);
-
+  const [selectedStage, setSelectedStage] = useState(null);
+  const [showStageDetails, setShowStageDetails] = useState(false);
+  const [showImpactDialog, setShowImpactDialog] = useState(false);
+  const [currentZoom, setCurrentZoom] = useState('week'); // Manage zoom state here to persist it
+  
+  // Show impact dialog when there are pending changes
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [stagesData, teamMembersData] = await Promise.all([
-        Stage.list('order_index'),
-        TeamMember.list()
-      ]);
-      setStages(stagesData || []);
-      setTeamMembers(teamMembersData || []);
-    } catch (error) {
-      console.error("Error loading timeline data:", error);
+    if (pendingChanges) {
+      setShowImpactDialog(true);
     }
-    setIsLoading(false);
-  };
+  }, [pendingChanges]);
+  
+  // Sort stages by number_index for list view
+  const sortedStages = [...stages].sort((a, b) => a.number_index - b.number_index);
+  
+  // Get critical path stages
+  const criticalPathStages = getCriticalPath();
+  const criticalPathIds = new Set(criticalPathStages.map(s => s.id));
 
   const getStatusInfo = (status) => {
     switch (status) {
@@ -51,18 +67,40 @@ export default function Timeline() {
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : '?';
 
   const handleStageClick = (stageId) => {
-    setSelectedStageId(stageId);
-    // Could open a modal or navigate to stage details
-    console.log('Stage clicked:', stageId);
+    const stage = stages.find(s => s.id === stageId);
+    if (stage) {
+      setSelectedStageId(stageId);
+      setSelectedStage(stage);
+      setShowStageDetails(true);
+    }
   };
 
   const handleStageUpdate = async (stageId, updates) => {
-    try {
-      await Stage.update(stageId, updates);
-      await loadData(); // Refresh data
-    } catch (error) {
-      console.error('Error updating stage:', error);
+    // This will trigger dependency validation in ProjectContext
+    const result = await updateStage(stageId, updates);
+    if (!result && !pendingChanges) {
+      toast.error('Failed to update stage');
     }
+    // If there are pending changes, the impact dialog will show
+  };
+  
+  const handleConfirmChanges = async () => {
+    try {
+      const result = await applyPendingChanges();
+      if (result) {
+        setShowImpactDialog(false);
+        // Success is handled by toast in applyPendingChanges
+      }
+    } catch (error) {
+      console.error('Error applying changes:', error);
+      toast.error('Failed to apply timeline changes. Please try again.');
+      setShowImpactDialog(false);
+    }
+  };
+  
+  const handleCancelChanges = () => {
+    cancelPendingChanges();
+    setShowImpactDialog(false);
   };
 
   if (isLoading) {
@@ -73,31 +111,66 @@ export default function Timeline() {
     );
   }
 
+  // Calculate overall progress
+  const completedStages = stages.filter(s => s.status === 'completed').length;
+  const totalStages = stages.length;
+  const progressPercentage = totalStages > 0 ? Math.round((completedStages / totalStages) * 100) : 0;
+
   return (
     <div className="p-8 lg:p-12">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="space-y-8"
+        className="space-y-6"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <BarChart3 className="w-7 h-7 text-white" />
+        {/* Header with title and progress */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <BarChart3 className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Project Timeline</h1>
+                <p className="text-slate-600 mt-1">Manage project schedule and dependencies</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Project Timeline</h1>
-              <p className="text-slate-600 mt-1">Interactive Gantt chart and detailed stage list view.</p>
+            
+            {/* Undo/Redo buttons */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={undo}
+                disabled={!canUndo}
+                className="gap-2"
+              >
+                <Undo className="w-4 h-4" />
+                Undo
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={redo}
+                disabled={!canRedo}
+                className="gap-2"
+              >
+                <Redo className="w-4 h-4" />
+                Redo
+              </Button>
             </div>
           </div>
-          
-          <div className="text-right">
-            <div className="text-sm text-slate-600">
-              <span className="font-semibold">{stages.length}</span> total stages
+
+          {/* Overall Progress Bar */}
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-slate-700">Overall Progress</span>
+              <span className="text-sm font-semibold text-slate-900">{progressPercentage}%</span>
             </div>
-            <div className="text-xs text-slate-500 mt-1">
-              {stages.filter(s => s.status === 'completed').length} completed • {' '}
-              {stages.filter(s => s.status === 'in_progress').length} in progress
+            <Progress value={progressPercentage} className="h-2" />
+            <div className="flex justify-between mt-2 text-xs text-slate-500">
+              <span>{completedStages} completed</span>
+              <span>{totalStages} total stages</span>
             </div>
           </div>
         </div>
@@ -120,6 +193,8 @@ export default function Timeline() {
               teamMembers={teamMembers}
               onStageClick={handleStageClick}
               onStageUpdate={handleStageUpdate}
+              zoom={currentZoom}
+              onZoomChange={setCurrentZoom}
             />
           </TabsContent>
 
@@ -136,11 +211,15 @@ export default function Timeline() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stages.map((stage) => {
+                  {sortedStages.map((stage) => {
                     const statusInfo = getStatusInfo(stage.status);
                     const assignedMember = teamMembers.find(m => m.email === stage.assigned_to);
                     return (
-                      <TableRow key={stage.id} className="hover:bg-slate-50/60 cursor-pointer" onClick={() => handleStageClick(stage.id)}>
+                      <TableRow 
+                        key={stage.id} 
+                        className={`hover:bg-slate-50/60 cursor-pointer ${criticalPathIds.has(stage.id) ? 'border-l-4 border-l-orange-400' : ''}`}
+                        onClick={() => handleStageClick(stage.id)}
+                      >
                         <TableCell className="text-center font-medium text-slate-500">{stage.number_index}</TableCell>
                         <TableCell className="font-semibold text-slate-800">{stage.name}</TableCell>
                         <TableCell>
@@ -180,6 +259,24 @@ export default function Timeline() {
             </div>
           </TabsContent>
         </Tabs>
+        
+        {/* Client-Friendly Impact Dialog */}
+        <ClientFriendlyImpactDialog
+          open={showImpactDialog}
+          onOpenChange={setShowImpactDialog}
+          pendingChanges={pendingChanges}
+          onConfirm={handleConfirmChanges}
+          onCancel={handleCancelChanges}
+        />
+        
+        {/* Stage Details Dialog */}
+        <StageDetailsDialog
+          stage={selectedStage}
+          teamMembers={teamMembers}
+          allStages={stages}
+          open={showStageDetails}
+          onOpenChange={setShowStageDetails}
+        />
       </motion.div>
     </div>
   );
