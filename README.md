@@ -34,9 +34,35 @@ Princess transforms the traditional agency-client relationship by providing:
   "react-router-dom": "^7.2.0",
   "framer-motion": "^12.4.7",
   "tailwindcss": "^3.4.17",
-  "@radix-ui/*": "Latest versions"
+  "@radix-ui/*": "Latest versions",
+  "@hello-pangea/dnd": "^18.0.1"
 }
 ```
+
+## ✨ Key Features
+
+### Core Functionality
+- **104-Stage Workflow** - Complete brand development process visualization
+- **Visual Timeline** - Interactive Gantt chart with drag-and-drop
+- **Dependency Management** - Smart cascade updates with validation
+- **Team Collaboration** - Real-time updates, comments, and notifications
+- **Version Control** - V0→V1→V2 deliverable workflow
+- **Client Portal** - Transparent progress tracking
+- **Responsive Design** - Fully mobile-optimized interface
+
+### v3.0.0 Features (September 2025)
+#### Feedback Loop Management
+- **Iteration Tracking** - Visual indicators showing "X of Y iterations used"
+- **Deadline Impact** - Automatic timeline adjustments for feedback delays
+- **One-Way Approvals** - Locked status for finalized deliverables
+- **Audit Trail** - Complete feedback history with timestamps
+
+#### Playbook Template Editor (Admin)
+- **Template Management** - Create, edit, duplicate, and version templates
+- **Drag-Drop Builder** - Visual stage configuration with phases
+- **Dependency Editor** - Click-to-connect with circular detection
+- **Version Control** - Snapshots with restore capabilities
+- **Import/Export** - JSON template sharing
 
 ## 🚀 Quick Start
 

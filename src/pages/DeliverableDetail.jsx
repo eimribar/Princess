@@ -17,6 +17,11 @@ import FilePreview from "@/components/deliverables/FilePreview";
 import StatusIndicator from "@/components/deliverables/StatusIndicator";
 import FileTypeIcon, { FileTypeLabel } from "@/components/deliverables/FileTypeIcon";
 import NotificationService from "@/services/notificationService";
+// New feedback management components
+import FeedbackManager from "@/components/deliverables/FeedbackManager";
+import FeedbackLimitIndicator from "@/components/deliverables/FeedbackLimitIndicator";
+import DeadlineImpactWarning from "@/components/deliverables/DeadlineImpactWarning";
+import ApprovalFinality from "@/components/deliverables/ApprovalFinality";
 import {
   ArrowLeft,
   FileText,
@@ -564,12 +569,15 @@ export default function DeliverableDetail() {
         {/* Tabbed Interface */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-            <TabsList className="grid w-full grid-cols-3 bg-white border border-gray-200 rounded-lg p-1 mb-8">
+            <TabsList className="grid w-full grid-cols-4 bg-white border border-gray-200 rounded-lg p-1 mb-8">
               <TabsTrigger value="overview" className="text-sm font-medium">
                 Overview
               </TabsTrigger>
               <TabsTrigger value="versions" className="text-sm font-medium">
                 Versions
+              </TabsTrigger>
+              <TabsTrigger value="feedback" className="text-sm font-medium">
+                Feedback
               </TabsTrigger>
               <TabsTrigger value="activity" className="text-sm font-medium">
                 Activity
@@ -579,6 +587,19 @@ export default function DeliverableDetail() {
             <TabsContent value="overview" className="space-y-6 mt-0">
                 {/* Status Overview */}
                 <StatusIndicator deliverable={deliverable} />
+                
+                {/* Feedback Limit Indicator */}
+                {deliverable.max_iterations && (
+                  <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
+                    <CardContent className="pt-6">
+                      <FeedbackLimitIndicator
+                        currentIteration={deliverable.current_iteration || 0}
+                        maxIterations={deliverable.max_iterations}
+                        isCompact={false}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Basic Information */}
                 <Card className="bg-white/60 backdrop-blur-xl border border-white/20 shadow-sm">
@@ -935,6 +956,105 @@ export default function DeliverableDetail() {
                     </div>
                   </CardContent>
                 </Card>
+            </TabsContent>
+            
+            {/* New Feedback Tab */}
+            <TabsContent value="feedback" className="space-y-6 mt-0">
+              {/* Feedback Management Section */}
+              <FeedbackManager
+                deliverable={{
+                  ...deliverable,
+                  max_iterations: deliverable.max_iterations || 3,
+                  current_iteration: deliverable.current_iteration || 0,
+                  iteration_history: deliverable.iteration_history || [],
+                  deadline_impact_total: deliverable.deadline_impact_total || 0,
+                  is_final: deliverable.is_final || false
+                }}
+                onApprove={async (updatedDeliverable) => {
+                  try {
+                    await Deliverable.update(deliverable.id, updatedDeliverable);
+                    setDeliverable(updatedDeliverable);
+                    
+                    // Create notification
+                    await NotificationService.create({
+                      type: 'success',
+                      title: 'Deliverable Approved',
+                      message: `${deliverable.name} has been approved (final).`,
+                      link: `/deliverables/detail?id=${deliverable.id}`
+                    });
+                    
+                    setUpdateMessage({ 
+                      type: 'success', 
+                      text: 'Deliverable approved successfully. This approval is final.' 
+                    });
+                  } catch (error) {
+                    setUpdateMessage({ 
+                      type: 'error', 
+                      text: 'Failed to approve deliverable: ' + error.message 
+                    });
+                  }
+                }}
+                onDecline={async (updatedDeliverable, feedback) => {
+                  try {
+                    await Deliverable.update(deliverable.id, updatedDeliverable);
+                    setDeliverable(updatedDeliverable);
+                    
+                    // Create comment with feedback
+                    await Comment.create({
+                      deliverable_id: deliverable.id,
+                      author_name: 'Client',
+                      author_email: 'client@deutschco.com',
+                      content: `Feedback for revision: ${feedback}`,
+                      type: 'feedback',
+                      created_date: new Date().toISOString()
+                    });
+                    
+                    // Create notification
+                    await NotificationService.create({
+                      type: 'warning',
+                      title: 'Changes Requested',
+                      message: `Feedback provided for ${deliverable.name}. Timeline adjusted.`,
+                      link: `/deliverables/detail?id=${deliverable.id}`
+                    });
+                    
+                    setUpdateMessage({ 
+                      type: 'success', 
+                      text: `Feedback submitted. Iteration ${updatedDeliverable.current_iteration} of ${updatedDeliverable.max_iterations}.` 
+                    });
+                    
+                    // Reload comments
+                    const updatedComments = await Comment.filter({ deliverable_id: deliverable.id }, '-created_date');
+                    setComments(updatedComments || []);
+                  } catch (error) {
+                    setUpdateMessage({ 
+                      type: 'error', 
+                      text: 'Failed to submit feedback: ' + error.message 
+                    });
+                  }
+                }}
+                onUpdateDeliverable={async (updatedDeliverable) => {
+                  await Deliverable.update(deliverable.id, updatedDeliverable);
+                  setDeliverable(updatedDeliverable);
+                }}
+              />
+              
+              {/* Deadline Impact Warning */}
+              <DeadlineImpactWarning
+                originalDeadline={deliverable.original_deadline || stage?.end_date}
+                currentDeadline={deliverable.adjusted_deadline || deliverable.original_deadline || stage?.end_date}
+                impactDays={deliverable.deadline_impact_total || 0}
+                feedbackHistory={deliverable.iteration_history || []}
+                showProjection={deliverable.current_iteration < deliverable.max_iterations}
+              />
+              
+              {/* Approval Finality Status */}
+              <ApprovalFinality
+                isApproved={deliverable.is_final}
+                isPendingApproval={currentVersion?.status === 'submitted' || currentVersion?.status === 'pending_approval'}
+                approvalDate={deliverable.iteration_history?.find(h => h.status === 'approved')?.date}
+                approvedBy={deliverable.iteration_history?.find(h => h.status === 'approved')?.feedback_by}
+                showWarning={!deliverable.is_final}
+              />
             </TabsContent>
         </Tabs>
         </motion.div>

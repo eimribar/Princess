@@ -269,8 +269,21 @@ export async function initializeAppData() {
         versions: versions,
         current_version: currentVersion,
         max_iterations: 3,
+        current_iteration: shouldHaveVersions ? (currentVersion === 'V1' ? 2 : 1) : 0,
+        iteration_history: shouldHaveVersions ? versions.map(v => ({
+          version: v.version_number,
+          date: v.uploaded_date,
+          feedback: v.feedback || null,
+          feedback_by: v.feedback_by || null,
+          status: v.status,
+          deadline_impact_days: v.status === 'declined' ? 3 : 0
+        })) : [],
+        deadline_impact_total: 0, // Total days added due to feedback delays
+        is_final: currentVersion === 'V1' && versions.find(v => v.version_number === 'V1')?.status === 'approved',
         approval_required_from: ['client@deutschco.com'],
         approval_deadline: null,
+        original_deadline: stage.end_date || null,
+        adjusted_deadline: stage.end_date || null,
         priority: 'medium'
       };
     });
