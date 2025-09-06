@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Deliverable, Project } from "@/api/entities";
+import { useParams } from 'react-router-dom';
+import { useUser } from '@/contexts/UserContext';
+import dataFilterService from '@/services/dataFilterService';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { 
   Download, 
   ExternalLink, 
@@ -14,16 +18,33 @@ import {
   Calendar,
   CheckCircle2,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Search,
+  Copy,
+  Check,
+  Grid,
+  List,
+  Filter
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
+import { useToast } from "@/components/ui/use-toast";
+import { cn } from '@/lib/utils';
 
-export default function Brandbook() {
+export default function Brandbook({ isPublic = false }) {
+  const { user } = useUser();
+  const { projectId } = useParams();
+  const { toast } = useToast();
+  
   const [project, setProject] = useState(null);
   const [brandbookDeliverables, setBrandbookDeliverables] = useState([]);
+  const [filteredDeliverables, setFilteredDeliverables] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState('grid');
+  const [shareUrl, setShareUrl] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadBrandbookData();
@@ -52,11 +73,12 @@ export default function Brandbook() {
     { id: "creative", name: "Creative", color: "from-pink-600 to-rose-700", icon: Palette }
   ];
 
-  const filteredDeliverables = selectedCategory === "all" 
+  // Filter deliverables based on category
+  const displayDeliverables = selectedCategory === "all" 
     ? brandbookDeliverables 
     : brandbookDeliverables.filter(d => d.type === selectedCategory);
 
-  const groupedDeliverables = filteredDeliverables.reduce((acc, deliverable) => {
+  const groupedDeliverables = displayDeliverables.reduce((acc, deliverable) => {
     if (!acc[deliverable.type]) {
       acc[deliverable.type] = [];
     }

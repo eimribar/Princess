@@ -11,6 +11,7 @@ export function useUser() {
 }
 
 export function UserProvider({ children }) {
+  const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(() => {
     // Load user from localStorage on initialization
     const saved = localStorage.getItem('princess_user');
@@ -20,6 +21,12 @@ export function UserProvider({ children }) {
       email: 'user@deutschco.com',
       role: 'admin', // 'admin', 'agency', 'client'
       team_type: 'agency', // 'agency' or 'client'
+      is_decision_maker: false,
+      notification_level: 3, // 1: all, 2: deliverables, 3: actions only
+      notification_channels: ['email'], // ['email', 'sms']
+      cover_image: null,
+      profile_image: null,
+      custom_buttons: [],
       permissions: {
         canEdit: true,
         canApprove: true,
@@ -33,9 +40,22 @@ export function UserProvider({ children }) {
     };
   });
 
+  // Simulate initial auth check
+  useEffect(() => {
+    const checkAuth = async () => {
+      setIsLoading(true);
+      // Simulate API call to verify session
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setIsLoading(false);
+    };
+    checkAuth();
+  }, []);
+
   // Save to localStorage whenever user changes
   useEffect(() => {
-    localStorage.setItem('princess_user', JSON.stringify(user));
+    if (user) {
+      localStorage.setItem('princess_user', JSON.stringify(user));
+    }
   }, [user]);
 
   const setUserRole = (role) => {
@@ -58,7 +78,8 @@ export function UserProvider({ children }) {
     user,
     setUser,
     setUserRole,
-    updateUser
+    updateUser,
+    isLoading
   };
 
   return (

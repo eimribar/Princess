@@ -1,6 +1,6 @@
 
 
-import React from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,31 +16,66 @@ import {
   GitMerge,
   Menu,
   Shield,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  X,
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import { useUser } from '@/contexts/UserContext';
 import { getVisibleNavigationItems, getRoleDisplayName, getRoleBadgeColor } from '@/lib/permissions';
+import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
-const navigationItems = [
-  { name: 'Dashboard', href: 'Dashboard', icon: LayoutGrid },
-  { name: 'Deliverables', href: 'Deliverables', icon: FolderKanban },
-  { name: 'Timeline', href: 'Timeline', icon: GanttChartSquare },
-  { name: 'Out of Scope', href: 'OutofScope', icon: GitMerge },
-  { name: 'Team', href: 'Team', icon: Users },
-  // { name: 'Brandbook', href: 'Brandbook', icon: BookCopy }, // Hidden for now
-  { name: 'Admin', href: 'Admin', icon: Settings },
+// Full navigation items - will be filtered based on role
+const allNavigationItems = [
+  { name: 'Dashboard', href: 'dashboard', icon: LayoutGrid, roles: ['admin', 'agency', 'client'] },
+  { name: 'Deliverables', href: 'deliverables', icon: FolderKanban, roles: ['admin', 'agency', 'client'] },
+  { name: 'Timeline', href: 'timeline', icon: GanttChartSquare, roles: ['admin', 'agency', 'client'] },
+  { name: 'Team', href: 'team', icon: Users, roles: ['admin', 'agency', 'client'] },
+  { name: 'Brand Assets', href: 'brandbook', icon: BookCopy, roles: ['admin', 'agency', 'client'], clientName: 'Brand Assets' },
+  { name: 'Out of Scope', href: 'out-of-scope', icon: GitMerge, roles: ['admin', 'agency'] },
+  { name: 'Admin', href: 'admin', icon: Settings, roles: ['admin'] },
 ];
 
 export default function Layout({ children, currentPageName }) {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, setUserRole } = useUser();
+    const [attentionCount, setAttentionCount] = useState(0);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    
+    // Filter navigation items based on user role
+    const navigationItems = useMemo(() => {
+        if (!user) return [];
+        
+        return allNavigationItems.filter(item => {
+            // Check if this item is available for the user's role
+            if (!item.roles.includes(user.role)) return false;
+            
+            // Use client-specific name if available
+            if (user.role === 'client' && item.clientName) {
+                return { ...item, name: item.clientName };
+            }
+            
+            return item;
+        });
+    }, [user]);
+    
+    // Calculate attention required items for clients
+    useEffect(() => {
+        if (user?.role === 'client') {
+            // In real app, this would fetch from API
+            // For now, mock some attention items
+            setAttentionCount(3);
+        }
+    }, [user]);
 
     const handleNotificationClick = (notification) => {
         // Navigate to the relevant deliverable when notification is clicked
         if (notification.data?.deliverable_id) {
-            navigate(createPageUrl(`DeliverableDetail?id=${notification.data.deliverable_id}`));
+            navigate(`/deliverables/${notification.data.deliverable_id}`);
         }
     };
 
@@ -64,28 +99,68 @@ export default function Layout({ children, currentPageName }) {
                             </div>
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Princess</h2>
-                                <p className="text-xs text-gray-500 font-medium">Project Management</p>
+                                <p className="text-xs text-gray-500 font-medium">
+                                    {user?.role === 'client' ? 'Brand Portal' : 'Project Management'}
+                                </p>
                             </div>
                         </div>
+                        
+                        {/* Client Attention Widget */}
+                        {user?.role === 'client' && attentionCount > 0 && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="mt-4 p-3 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <AlertCircle className="w-4 h-4 text-red-600" />
+                                        <span className="text-sm font-medium text-red-900">
+                                            Action Required
+                                        </span>
+                                    </div>
+                                    <Badge className="bg-red-600 text-white">
+                                        {attentionCount}
+                                    </Badge>
+                                </div>
+                                <p className="text-xs text-red-700 mt-1">
+                                    You have {attentionCount} items awaiting review
+                                </p>
+                            </motion.div>
+                        )}
                     </div>
                     
                     {/* Navigation */}
                     <nav className="flex-1 px-4 py-6 space-y-2">
                         {navigationItems.map((item) => {
-                            const isActive = location.pathname === createPageUrl(item.href) || 
-                                           location.pathname.startsWith(createPageUrl(item.href) + '/');
+                            const isActive = location.pathname === `/${item.href}` || 
+                                           location.pathname.startsWith(`/${item.href}/`);
+                            
+                            // Show badge for deliverables if client has attention items
+                            const showBadge = user?.role === 'client' && 
+                                            item.href === 'deliverables' && 
+                                            attentionCount > 0;
+                            
                             return (
                                 <Link
                                     key={item.href}
-                                    to={createPageUrl(item.href)}
-                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                    to={`/${item.href}`}
+                                    className={cn(
+                                        "flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-all",
                                         isActive
-                                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                            ? 'bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-sm'
                                             : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                    }`}
+                                    )}
                                 >
-                                    <item.icon className="w-4 h-4" />
-                                    {item.name}
+                                    <div className="flex items-center gap-3">
+                                        <item.icon className="w-4 h-4" />
+                                        <span>{item.name}</span>
+                                    </div>
+                                    {showBadge && (
+                                        <Badge className="bg-red-600 text-white text-xs px-1.5 py-0.5">
+                                            {attentionCount}
+                                        </Badge>
+                                    )}
                                 </Link>
                             );
                         })}

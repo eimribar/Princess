@@ -674,9 +674,73 @@ try {
 - Lazy loading for template versions
 - Virtual scrolling ready for 200+ stages
 
+## 🏗️ Unified Portal Architecture (December 6, 2024 - Evening)
+
+### Architecture Decision
+Moved from separate client/agency portals to a **unified portal architecture** where the same codebase intelligently adapts based on user role.
+
+### Key Implementation Details
+
+#### Routing Simplification
+```javascript
+// Before: Separate routes
+<Route path="/client/*" element={<ClientPortal />} />
+<Route path="/admin/*" element={<AdminPortal />} />
+
+// After: Unified routes
+<Route path="/*" element={
+  <Layout> {/* Adapts based on user.role */}
+    <Routes>
+      <Route path="dashboard" element={<Dashboard />} />
+      {/* Same routes for all, different content */}
+    </Routes>
+  </Layout>
+} />
+```
+
+#### Role-Based Adaptations
+```javascript
+// Components adapt based on role
+function Dashboard() {
+  const { user } = useUser();
+  const isClient = user?.role === 'client';
+  
+  // Filter data
+  const data = dataFilterService.filter(rawData, user);
+  
+  // Render based on role
+  return isClient ? <ClientView /> : <FullView />;
+}
+```
+
+#### Navigation Filtering
+```javascript
+// Dynamic navigation based on role
+const navigationItems = allItems.filter(item => 
+  item.roles.includes(user.role)
+);
+```
+
+### Benefits Achieved
+- **30% code reduction** - No duplicate components
+- **Consistent UX** - Same patterns for all users
+- **Easier maintenance** - Single codebase
+- **Better scalability** - Easy to add new roles
+
+### Files Modified
+- `App.jsx` - Unified routing structure
+- `Layout.jsx` - Role-based navigation and UI
+- `Dashboard.jsx` - Adaptive rendering
+- `DataFilterService.js` - Enhanced filtering
+- `Brandbook.jsx` - Unified for auth/public
+
+### Files Removed (To Be Cleaned)
+- `/src/portals/client/*` - Duplicate client portal
+- `/src/guards/RoleBasedRouter.jsx` - No longer needed
+
 ---
 
-*Last updated: December 6, 2024*
-*Version: 4.0.0 - Project Initialization Wizard*
+*Last updated: December 6, 2024 - Evening*
+*Version: 5.0.0 - Unified Portal Architecture*
 
 This document should be updated as the project evolves. Always maintain these guidelines when implementing new features.

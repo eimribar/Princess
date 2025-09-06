@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { checkAndInitialize } from "@/api/initializeData";
 import { initializeSampleNotifications } from "@/utils/initializeNotifications";
 import { useProject } from "@/contexts/ProjectContext";
+import { useUser } from "@/contexts/UserContext";
+import dataFilterService from "@/services/dataFilterService";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
@@ -14,10 +16,17 @@ import PremiumDeliverablesStatus from "../components/dashboard/PremiumDeliverabl
 import StageSidebarV2 from "../components/dashboard/StageSidebarV2";
 import OutOfScopeForm from "../components/dashboard/OutOfScopeForm";
 import { Progress } from "@/components/ui/progress";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle, Info } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Dashboard() {
+  // Get user context for role-based rendering
+  const { user } = useUser();
+  const isClient = user?.role === 'client';
+  const isAgency = user?.role === 'agency';
+  const isAdmin = user?.role === 'admin';
+  
   // Use global state from ProjectContext
   const { 
     project: contextProject,
@@ -70,12 +79,22 @@ export default function Dashboard() {
         OutOfScopeRequest.list('-created_date')
       ]);
       
+      // Apply role-based filtering for clients
+      const filteredStages = dataFilterService.filterStages(stagesData || [], user);
+      const filteredDeliverables = dataFilterService.filterDeliverables(deliverablesData || [], user);
+      const filteredComments = dataFilterService.filterComments(commentsData || [], user);
+      const filteredTeamMembers = dataFilterService.filterTeamMembers(teamMembersData || [], user);
+      
       setProject(projectData);
-      setStages(stagesData || []);
-      setComments(commentsData || []);
-      setDeliverables(deliverablesData || []);
-      setTeamMembers(teamMembersData || []);
-      setOutOfScopeRequests(outOfScopeData || []);
+      setStages(filteredStages);
+      setComments(filteredComments);
+      setDeliverables(filteredDeliverables);
+      setTeamMembers(filteredTeamMembers);
+      
+      // Clients don't see out-of-scope requests
+      if (!isClient) {
+        setOutOfScopeRequests(outOfScopeData || []);
+      }
 
       // Calculate real progress using stage manager
       const progress = await stageManager.calculateRealProgress();
@@ -84,7 +103,7 @@ export default function Dashboard() {
       console.error("Error loading data:", error);
     }
     setIsLoading(false);
-  }, []);
+  }, [user, isClient]);
 
   useEffect(() => {
     loadData();
@@ -201,7 +220,26 @@ export default function Dashboard() {
     <div className="flex h-screen">
       <div className="flex-1 overflow-y-auto min-w-0">
         <div className="p-8 lg:p-12 space-y-10">
-          <ProjectHeader project={project} onOpenOutOfScopeForm={handleOpenOutOfScopeForm} />
+          {/* Client Welcome Message */}
+          {isClient && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6"
+            >
+              <Alert className="border-blue-200 bg-blue-50">
+                <Info className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  Welcome to your brand development portal. Review deliverables requiring your attention in the sidebar.
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
+          
+          <ProjectHeader 
+            project={project} 
+            onOpenOutOfScopeForm={!isClient ? handleOpenOutOfScopeForm : undefined} 
+          />
           
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}>
             <div className="space-y-3">
@@ -240,17 +278,37 @@ export default function Dashboard() {
                   setSelectedStageId(null);
                   setIsSidebarExpanded(false);
                 }}
-                onAddComment={handleAddComment}
-                onStageUpdate={handleStageUpdate}
+                onAddComment={!isClient ? handleAddComment : undefined}
+                onStageUpdate={!isClient ? handleStageUpdate : undefined}
                 teamMembers={teamMembers}
                 isExpanded={isSidebarExpanded}
                 onToggleExpand={() => setIsSidebarExpanded(!isSidebarExpanded)}
+                readOnly={isClient}
           />
         ) : (
           <div className="p-6 space-y-6">
+            {/* Enhanced attention widget for clients */}
+            {isClient && deliverables.filter(d => d.status === 'pending_approval').length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-4 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                  <div>
+                    <h3 className="font-semibold text-red-900">Action Required</h3>
+                    <p className="text-sm text-red-700 mt-1">
+                      You have {deliverables.filter(d => d.status === 'pending_approval').length} deliverables awaiting your review
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            
             <PremiumRequiresAttention 
               deliverables={deliverables} 
-              outOfScopeRequests={outOfScopeRequests} 
+              outOfScopeRequests={!isClient ? outOfScopeRequests : []} 
             />
             <PremiumDeliverablesStatus deliverables={deliverables} />
           </div>
