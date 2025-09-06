@@ -16,6 +16,8 @@ import Timeline from "./Timeline";
 
 import OutofScope from "./OutofScope";
 
+import ProjectSetup from "./ProjectSetup";
+
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 
 const PAGES = {
@@ -35,6 +37,8 @@ const PAGES = {
     Timeline: Timeline,
     
     OutofScope: OutofScope,
+    
+    ProjectSetup: ProjectSetup,
     
 }
 
@@ -78,6 +82,8 @@ function PagesContent() {
                 <Route path="/timeline" element={<Timeline />} />
                 
                 <Route path="/outofscope" element={<OutofScope />} />
+                
+                <Route path="/projectsetup" element={<ProjectSetup />} />
                 
             </Routes>
         </Layout>

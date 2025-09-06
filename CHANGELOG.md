@@ -5,6 +5,82 @@ All notable changes to the Princess Brand Development Management System will be 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2024-12-06
+
+### 🚀 Project Initialization Wizard
+
+This major release introduces a comprehensive project setup wizard for streamlined project creation.
+
+#### Added - Project Setup Wizard
+- **ProjectSetup Component** - Main wizard container
+  - Premium animated stepper with progress bar
+  - Auto-save draft functionality (every 3 seconds)
+  - Smart navigation with step validation
+  - Time estimates for each section
+  - Exit confirmation dialogs
+  - Keyboard shortcuts support
+
+- **TemplateSelector Component** - Template selection interface
+  - Visual card-based gallery with hover effects
+  - Template comparison mode (up to 3 templates)
+  - Fit score calculations based on requirements
+  - Preview modals with complete template details
+  - Category filtering (Standard, Express, Specialized, Custom)
+  - Popularity indicators and recommendations
+
+- **StageCustomizer Component** - Stage management system
+  - Drag-and-drop stage reordering with @hello-pangea/dnd
+  - Inline editing of stage properties
+  - Bulk operations (select multiple, add 5 at once)
+  - Phase grouping with collapsible sections
+  - Timeline impact calculations
+  - Dependency validation and warnings
+  - Reset to template functionality
+
+- **TeamConfiguration Component** - Team assignment interface
+  - Drag-and-drop member assignment to roles
+  - Role-based organization with permissions
+  - Capacity tracking with availability indicators
+  - Decision maker designation (max 2)
+  - Team invitation system
+  - Overallocation warnings
+
+- **TimelineSetup Component** - Timeline configuration
+  - Interactive date selection with calendar
+  - Milestone management system
+  - Buffer strategy options (standard/aggressive/conservative/custom)
+  - Weekend and holiday accounting
+  - Parallel work optimization
+  - Feasibility analysis with recommendations
+  - Visual timeline preview
+
+- **ClientPreferences Component** - Client settings configuration
+  - Multi-level notification settings (all/important/critical)
+  - Access control configuration
+  - Brand customization (logo, colors, cover image)
+  - Welcome message editor
+  - Integration connections (Slack, Google Drive, Calendar)
+  - Visual branding preview
+
+- **ProjectReview Component** - Final review and confirmation
+  - Comprehensive project summary
+  - Template change tracking
+  - Cost estimation (low/mid/high)
+  - Validation checks with issues/warnings
+  - Export functionality (JSON)
+  - Print summary option
+  - Terms agreement checkbox
+
+#### Integration Updates
+- Added routing to `/projectsetup`
+- Added "Start New Project" button to Admin panel
+- Integrated Template Manager in Admin page
+- Connected wizard with existing ProjectContext
+
+#### Bug Fixes
+- Fixed HTML entity encoding issue in TeamConfiguration component
+- Corrected syntax error with less-than symbol in JSX
+
 ## [3.0.0] - 2025-09-03
 
 ### 🎯 Feedback Loop Management & Playbook Template Editor

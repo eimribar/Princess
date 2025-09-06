@@ -1,5 +1,6 @@
 
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -10,13 +11,18 @@ import {
   Bell,
   Calendar,
   Database,
-  Shield
+  Shield,
+  Plus,
+  Rocket
 } from "lucide-react";
 import { motion } from "framer-motion";
 import PlaybookSeeder from "../components/admin/PlaybookSeeder";
 import DeliverablePlaybook from "../components/admin/DeliverablePlaybook";
+import TemplateManager from "../components/admin/PlaybookEditor/TemplateManager";
 
 export default function Admin() {
+  const navigate = useNavigate();
+  
   const adminSections = [
     {
       title: "Project Templates",
@@ -74,9 +80,19 @@ export default function Admin() {
             <Settings className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-4">Admin Panel</h1>
-          <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+          <p className="text-slate-600 text-lg max-w-2xl mx-auto mb-6">
             Configure and manage your Princess project management system
           </p>
+          
+          {/* New Project Button */}
+          <Button 
+            size="lg"
+            className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+            onClick={() => navigate('/projectsetup')}
+          >
+            <Rocket className="w-5 h-5 mr-2" />
+            Start New Project
+          </Button>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -140,6 +156,26 @@ export default function Admin() {
             </CardHeader>
             <CardContent className="p-6">
               <PlaybookSeeder />
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Template Manager Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65 }}
+          className="mt-12"
+        >
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="border-b border-slate-200 p-6">
+              <div className="flex items-center gap-3">
+                <Workflow className="w-6 h-6 text-slate-600" />
+                <CardTitle className="text-xl">Playbook Template Editor</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6">
+              <TemplateManager />
             </CardContent>
           </Card>
         </motion.div>
