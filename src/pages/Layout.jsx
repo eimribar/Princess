@@ -23,7 +23,8 @@ import {
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
 import NotificationBell from '@/components/notifications/NotificationBell';
-import { useUser } from '@/contexts/UserContext';
+import ProjectSelector from '@/components/dashboard/ProjectSelector';
+import { useUser } from '@/contexts/SupabaseUserContext';
 import { getVisibleNavigationItems, getRoleDisplayName, getRoleBadgeColor } from '@/lib/permissions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -36,7 +37,7 @@ const allNavigationItems = [
   { name: 'Team', href: 'team', icon: Users, roles: ['admin', 'agency', 'client'] },
   { name: 'Brand Assets', href: 'brandbook', icon: BookCopy, roles: ['admin', 'agency', 'client'], clientName: 'Brand Assets' },
   { name: 'Out of Scope', href: 'out-of-scope', icon: GitMerge, roles: ['admin', 'agency'] },
-  { name: 'Admin', href: 'admin', icon: Settings, roles: ['admin'] },
+  { name: 'Admin', href: 'admin', icon: Settings, roles: ['admin', 'agency'] },
 ];
 
 export default function Layout({ children, currentPageName }) {
@@ -234,6 +235,18 @@ export default function Layout({ children, currentPageName }) {
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Desktop header */}
+                <header className="hidden md:flex bg-white border-b border-gray-200 px-6 py-3">
+                    <div className="flex items-center justify-between w-full">
+                        <ProjectSelector />
+                        <div className="flex items-center gap-4">
+                            <NotificationBell 
+                                onNotificationClick={handleNotificationClick}
+                            />
+                        </div>
+                    </div>
+                </header>
+                
                 {/* Mobile header */}
                 <header className="md:hidden bg-white border-b border-gray-200 px-4 py-3">
                     <div className="flex items-center justify-between">

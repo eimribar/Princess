@@ -1,13 +1,13 @@
 
-import React, { useState, useEffect, useCallback } from "react";
-import { Project, Stage, Comment, Deliverable, TeamMember, OutOfScopeRequest } from "@/api/entities";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useParams } from "react-router-dom";
+import dataService from "@/services/dataService";
 import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
-import { checkAndInitialize } from "@/api/initializeData";
-import { initializeSampleNotifications } from "@/utils/initializeNotifications";
 import { useProject } from "@/contexts/ProjectContext";
-import { useUser } from "@/contexts/UserContext";
+import { useUser } from "@/contexts/SupabaseUserContext";
 import dataFilterService from "@/services/dataFilterService";
+import { useAbortableRequest } from "@/services/abortableRequest";
 
 import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
@@ -21,6 +21,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function Dashboard() {
+  // Get project ID from URL if present
+  const { projectId } = useParams();
+  
   // Get user context for role-based rendering
   const { user } = useUser();
   const isClient = user?.role === 'client';
@@ -29,13 +32,15 @@ export default function Dashboard() {
   
   // Use global state from ProjectContext
   const { 
+    currentProjectId,
     project: contextProject,
     stages: contextStages, 
     deliverables: contextDeliverables, 
     teamMembers: contextTeamMembers,
     isLoading: contextLoading,
     updateStage: globalUpdateStage,
-    reloadData: reloadProjectData
+    reloadData: reloadProjectData,
+    switchProject
   } = useProject();
   
   // Local state for dashboard-specific data
@@ -45,13 +50,14 @@ export default function Dashboard() {
   const [deliverables, setDeliverables] = useState(contextDeliverables);
   const [teamMembers, setTeamMembers] = useState(contextTeamMembers);
   const [outOfScopeRequests, setOutOfScopeRequests] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedStageId, setSelectedStageId] = useState(null);
   const [isOutOfScopeFormOpen, setIsOutOfScopeFormOpen] = useState(false);
   const [realProgress, setRealProgress] = useState(0);
   const [lastNotificationTime, setLastNotificationTime] = useState(0);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const { toast } = useToast();
+  const abortableRequest = useAbortableRequest();
+  const loadDataAbortRef = useRef(null);
   
   // Sync with context when it changes
   useEffect(() => {
@@ -61,23 +67,54 @@ export default function Dashboard() {
     setTeamMembers(contextTeamMembers);
   }, [contextProject, contextStages, contextDeliverables, contextTeamMembers]);
 
+  // Handle project switching from URL
+  useEffect(() => {
+    if (projectId && projectId !== currentProjectId) {
+      switchProject(projectId);
+    }
+  }, [projectId, currentProjectId, switchProject]);
+
   const loadData = useCallback(async () => {
-    setIsLoading(true);
+    // Abort any previous load request
+    if (loadDataAbortRef.current) {
+      loadDataAbortRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    loadDataAbortRef.current = abortController;
+    
+    // setIsLoading(true); // Removed - using contextLoading
     try {
-      // Initialize data if needed
-      await checkAndInitialize();
+      // Check if already aborted
+      if (abortController.signal.aborted) {
+        return;
+      }
       
-      // Initialize sample notifications
-      await initializeSampleNotifications();
+      // Use unified data service
+      let projectData, stagesData, commentsData, deliverablesData, teamMembersData, outOfScopeData;
       
-      const [projectData, stagesData, commentsData, deliverablesData, teamMembersData, outOfScopeData] = await Promise.all([
-        Project.list().then(p => p[0]),
-        Stage.list('order_index'),
-        Comment.list('-created_date'),
-        Deliverable.list('-created_date'),
-        TeamMember.list(),
-        OutOfScopeRequest.list('-created_date')
-      ]);
+      if (projectId) {
+        // Load specific project data
+        const data = await dataService.loadProjectData(projectId);
+        if (abortController.signal.aborted) return;
+        projectData = data.project;
+        stagesData = data.stages;
+        deliverablesData = data.deliverables;
+        commentsData = data.comments;
+        teamMembersData = data.teamMembers;
+        outOfScopeData = data.outOfScopeRequests;
+      } else {
+        // Load general dashboard data
+        const data = await dataService.loadDashboardData();
+        if (abortController.signal.aborted) return;
+        projectData = data.project;
+        stagesData = data.stages;
+        deliverablesData = data.deliverables;
+        commentsData = [];
+        teamMembersData = data.teamMembers;
+        outOfScopeData = [];
+      }
       
       // Apply role-based filtering for clients
       const filteredStages = dataFilterService.filterStages(stagesData || [], user);
@@ -96,21 +133,35 @@ export default function Dashboard() {
         setOutOfScopeRequests(outOfScopeData || []);
       }
 
-      // Calculate real progress using stage manager
-      const progress = await stageManager.calculateRealProgress();
-      setRealProgress(progress);
+      // Calculate real progress using stage manager with project filtering
+      const projectIdToUse = projectId || projectData?.id;
+      if (projectIdToUse) {
+        const progress = await stageManager.calculateRealProgress(projectIdToUse);
+        if (!abortController.signal.aborted) {
+          setRealProgress(progress);
+        }
+      } else {
+        setRealProgress(0); // No project, no progress
+      }
     } catch (error) {
-      console.error("Error loading data:", error);
+      // Ignore abort errors
+      if (error.name !== 'AbortError') {
+        console.error("Error loading data:", error);
+      }
+    } finally {
+      // Only set loading false if not aborted
+      if (!abortController.signal.aborted) {
+        // setIsLoading(false); // Removed - using contextLoading
+      }
     }
-    setIsLoading(false);
-  }, [user, isClient]);
+  }, [user, isClient, projectId]);
 
   useEffect(() => {
-    loadData();
+    // Load comments (not loaded by ProjectContext)
+    loadComments();
 
     // Subscribe to stage manager changes for real-time updates
     const unsubscribe = stageManager.subscribe(async (changes) => {
-      console.log('Stage changes detected:', changes);
       
       // Only show notifications for user-initiated actions, not data reloads
       if (changes.isUserAction !== false) {
@@ -131,22 +182,35 @@ export default function Dashboard() {
       }
 
       // Only reload stages and progress, not everything
+      // FIXED: Use project-filtered stages instead of ALL stages
+      const currentProjectId = projectId || project?.id;
+      if (!currentProjectId) return;
+      
       const [stagesData, projectData] = await Promise.all([
-        Stage.list('order_index'),
-        Project.list().then(p => p[0])
+        dataService.getProjectStages(currentProjectId, 'number_index'),
+        dataService.getProject(currentProjectId)
       ]);
       setStages(stagesData || []);
       if (projectData) {
         setProject(projectData);
       }
       
-      // Update real progress
-      const progress = await stageManager.calculateRealProgress();
-      setRealProgress(progress);
+      // Update real progress with project filtering
+      if (currentProjectId) {
+        const progress = await stageManager.calculateRealProgress(currentProjectId);
+        setRealProgress(progress);
+      }
     });
 
-    return unsubscribe;
-  }, [loadData, toast, lastNotificationTime]);
+    // Cleanup function
+    return () => {
+      unsubscribe();
+      // Abort any pending requests on unmount
+      if (loadDataAbortRef.current) {
+        loadDataAbortRef.current.abort();
+      }
+    };
+  }, [loadData, toast, lastNotificationTime, projectId]);
 
   const calculateProjectProgress = () => {
     return realProgress; // Use intelligent progress calculation from stage manager
@@ -162,6 +226,23 @@ export default function Dashboard() {
     setSelectedStageId(null);
   };
 
+  const loadComments = async () => {
+    try {
+      // CRITICAL FIX: Load only project-specific comments
+      const currentProjectId = projectId || project?.id;
+      if (!currentProjectId) {
+        setComments([]);
+        return;
+      }
+      
+      const commentsData = await dataService.getProjectComments(currentProjectId, '-created_at');
+      const filteredComments = dataFilterService.filterComments(commentsData || [], user);
+      setComments(filteredComments);
+    } catch (error) {
+      console.error('Error loading comments:', error);
+    }
+  };
+
   const handleStageUpdate = async (stageId, updates) => {
     // Use global update from context for synchronization
     if (stageId && updates) {
@@ -170,8 +251,8 @@ export default function Dashboard() {
       // Fallback to reload if no specific update
       await reloadProjectData();
     }
-    // Reload local data like comments
-    await loadData();
+    // Reload comments
+    await loadComments();
   };
 
   const handleOpenOutOfScopeForm = () => {
@@ -192,23 +273,24 @@ export default function Dashboard() {
     const stage = stages.find(s => s.id === selectedStageId);
     if (!stage) return;
     
-    await Comment.create({
+    await dataService.createComment({
       project_id: stage.project_id,
       stage_id: stage.id,
       content: content,
-      author_name: "Current User",
-      author_email: "user@deutschco.com", 
+      author_name: user?.name || "Current User",
+      author_email: user?.email || "user@deutschco.com", 
     });
     
     // Refresh comments
-    const updatedComments = await Comment.list('-created_date');
+    const updatedComments = await dataService.getComments('-created_at');
     setComments(updatedComments);
   };
 
   const selectedStage = selectedStageId ? stages.find(s => s.id === selectedStageId) : null;
   const stageComments = selectedStageId ? comments.filter(c => c.stage_id === selectedStageId) : [];
 
-  if (isLoading) {
+  // Use contextLoading instead of local isLoading
+  if (contextLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-50">
         <Loader2 className="w-12 h-12 text-slate-400 animate-spin" />

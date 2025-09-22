@@ -1,10 +1,11 @@
 /**
  * Princess Entity Classes
  * Provides API-compatible interfaces for all data entities
- * Uses local dataStore but maintains same API as Base44 SDK
+ * Uses Supabase for team members, local dataStore for others
  */
 
 import dataStore from './dataStore';
+import supabaseService from './supabaseService';
 
 // Base Entity class with common functionality
 class BaseEntity {
@@ -119,10 +120,43 @@ class DeliverableEntity extends BaseEntity {
   }
 }
 
-// TeamMember Entity
-class TeamMemberEntity extends BaseEntity {
-  constructor() {
-    super('teamMembers');
+// TeamMember Entity - Uses Supabase directly
+class TeamMemberEntity {
+  async list(orderBy = 'name') {
+    return supabaseService.getTeamMembers(orderBy);
+  }
+
+  async get(id) {
+    const member = await supabaseService.getTeamMember(id);
+    if (!member) {
+      throw new Error(`Team member with id ${id} not found`);
+    }
+    return member;
+  }
+
+  async create(data) {
+    return supabaseService.createTeamMember(data);
+  }
+
+  async update(id, updates) {
+    return supabaseService.updateTeamMember(id, updates);
+  }
+
+  async delete(id) {
+    return supabaseService.deleteTeamMember(id);
+  }
+
+  async filter(filters) {
+    // For now, get all and filter in memory
+    const all = await this.list();
+    return all.filter(item => {
+      return Object.entries(filters).every(([key, value]) => {
+        if (typeof value === 'object' && value.in) {
+          return value.in.includes(item[key]);
+        }
+        return item[key] === value;
+      });
+    });
   }
 }
 

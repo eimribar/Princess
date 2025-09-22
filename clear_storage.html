@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Princess Storage</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .safe-btn {
+            background: #2563eb;
+        }
+        .safe-btn:hover {
+            background: #1d4ed8;
+        }
+        .output {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f9ff;
+            border-radius: 6px;
+            border: 1px solid #bfdbfe;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .warning {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Princess Storage Manager</h1>
+        
+        <div class="warning">
+            ⚠️ Warning: Clearing storage will remove all local project data!
+        </div>
+        
+        <div>
+            <button onclick="clearAll()">🗑️ Clear All Storage</button>
+            <button onclick="clearProjectData()" class="safe-btn">🔄 Clear Project Data Only</button>
+            <button onclick="showStorage()" class="safe-btn" style="background: #059669;">👁️ View Storage</button>
+        </div>
+        
+        <div id="output" class="output" style="display: none;"></div>
+    </div>
+    
+    <script>
+    function showOutput(message, isError = false) {
+        const output = document.getElementById('output');
+        output.style.display = 'block';
+        output.style.background = isError ? '#fef2f2' : '#f0f9ff';
+        output.style.borderColor = isError ? '#fecaca' : '#bfdbfe';
+        output.style.color = isError ? '#991b1b' : '#1e40af';
+        output.textContent = message;
+    }
+    
+    function clearAll() {
+        if (!confirm('Are you sure you want to clear ALL localStorage data? This cannot be undone!')) {
+            return;
+        }
+        
+        try {
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                console.log('Removing:', key);
+                localStorage.removeItem(key);
+            });
+            
+            showOutput(`✅ Successfully cleared ${keys.length} localStorage items:\n${keys.join('\n')}`);
+            
+            setTimeout(() => {
+                if (confirm('Storage cleared! Refresh the page now?')) {
+                    window.location.href = 'http://localhost:5173';
+                }
+            }, 1000);
+        } catch (error) {
+            showOutput('❌ Error clearing storage: ' + error.message, true);
+        }
+    }
+    
+    function clearProjectData() {
+        if (!confirm('Clear all project data but keep other settings?')) {
+            return;
+        }
+        
+        try {
+            const keysToRemove = [
+                'princess_data',
+                'princess_projects',
+                'princess_initialized_data',
+                'projectInitDraft',
+                'projectSetupDraft'
+            ];
+            
+            // Also remove any project-specific keys
+            const allKeys = Object.keys(localStorage);
+            allKeys.forEach(key => {
+                if (key.startsWith('project_') || key.includes('stages') || key.includes('deliverables')) {
+                    keysToRemove.push(key);
+                }
+            });
+            
+            const removed = [];
+            keysToRemove.forEach(key => {
+                if (localStorage.getItem(key)) {
+                    localStorage.removeItem(key);
+                    removed.push(key);
+                }
+            });
+            
+            showOutput(`✅ Successfully cleared project data:\n${removed.join('\n')}\n\nKept auth and user settings.`);
+            
+            setTimeout(() => {
+                if (confirm('Project data cleared! Refresh the page now?')) {
+                    window.location.href = 'http://localhost:5173';
+                }
+            }, 1000);
+        } catch (error) {
+            showOutput('❌ Error clearing project data: ' + error.message, true);
+        }
+    }
+    
+    function showStorage() {
+        try {
+            const storage = {};
+            const keys = Object.keys(localStorage);
+            
+            keys.forEach(key => {
+                const value = localStorage.getItem(key);
+                let parsed;
+                try {
+                    parsed = JSON.parse(value);
+                    // Summarize large objects
+                    if (parsed && typeof parsed === 'object') {
+                        if (Array.isArray(parsed)) {
+                            storage[key] = `Array with ${parsed.length} items`;
+                        } else if (parsed.stages) {
+                            storage[key] = `Object with stages: ${parsed.stages?.length || 0} items`;
+                        } else if (parsed.projects) {
+                            const projects = parsed.projects || [];
+                            storage[key] = `Projects: ${projects.map(p => p.name || p.id).join(', ')}`;
+                        } else {
+                            storage[key] = `Object with keys: ${Object.keys(parsed).join(', ')}`;
+                        }
+                    } else {
+                        storage[key] = parsed;
+                    }
+                } catch {
+                    // Not JSON, show as string (truncated if too long)
+                    storage[key] = value.length > 100 ? value.substring(0, 100) + '...' : value;
+                }
+            });
+            
+            const output = Object.entries(storage)
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('\n');
+            
+            showOutput(`📦 LocalStorage Contents (${keys.length} items):\n\n${output}`);
+        } catch (error) {
+            showOutput('❌ Error reading storage: ' + error.message, true);
+        }
+    }
+    
+    // Auto-show storage on load
+    window.onload = () => {
+        showStorage();
+    };
+    </script>
+</body>
+</html>

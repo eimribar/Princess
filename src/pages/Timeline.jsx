@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Stage, TeamMember } from "@/api/entities";
+import { SupabaseStage, SupabaseTeamMember } from "@/api/supabaseEntities";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";

@@ -97,7 +97,16 @@ export async function initializeAppData() {
       dependencies: [],
       dependency_type: item.dependency_type || 'sequential',
       blocking_priority: item.blocking_priority || 'low',
-      resource_dependency: item.resource_dependency || 'none',
+      resource_dependency: (() => {
+        const dep = item.resource_dependency;
+        if (dep === 'client_input') return 'client_materials';
+        if (dep === 'roee_approval') return 'none';
+        if (dep && !['none', 'client_materials', 'external_vendor'].includes(dep)) {
+          console.warn(`Invalid resource_dependency: ${dep}, using 'none'`);
+          return 'none';
+        }
+        return dep || 'none';
+      })(),
       parallel_tracks: [],
     }));
     
@@ -304,10 +313,8 @@ export async function initializeAppData() {
 
 // Check if initialization is needed
 export async function checkAndInitialize() {
-  const stages = await Stage.list();
-  if (!stages || stages.length === 0) {
-    console.log('No stages found, triggering automatic initialization...');
-    return await initializeAppData();
-  }
+  // DISABLED: This function was checking globally for ANY stages
+  // which prevented new projects from starting fresh
+  // Each project should clone its own stages from the playbook template
   return true;
 }

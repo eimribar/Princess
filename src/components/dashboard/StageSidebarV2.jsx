@@ -33,7 +33,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { format, formatDistanceToNow, isValid } from "date-fns";
-import { Stage, TeamMember, Comment } from "@/api/entities";
+import { SupabaseStage, SupabaseTeamMember, SupabaseComment } from "@/api/supabaseEntities";
 import ProfessionalManagement from './ProfessionalManagement';
 import MiniDependencyMap from './MiniDependencyMap';
 import { motion, AnimatePresence } from "framer-motion";

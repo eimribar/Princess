@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Deliverable, Stage, Comment, TeamMember } from "@/api/entities";
+import React, { useState, useEffect, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { SupabaseDeliverable as Deliverable, SupabaseStage as Stage, SupabaseComment as Comment, SupabaseTeamMember as TeamMember } from "@/api/supabaseEntities";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +49,7 @@ import { motion } from "framer-motion";
 
 export default function DeliverableDetail() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { id } = useParams();
   const [deliverable, setDeliverable] = useState(null);
   const [stage, setStage] = useState(null);
   const [comments, setComments] = useState([]);
@@ -71,14 +71,22 @@ export default function DeliverableDetail() {
   const [isProcessingApproval, setIsProcessingApproval] = useState(false);
   const [quickComment, setQuickComment] = useState('');
   const [isAddingComment, setIsAddingComment] = useState(false);
+  
+  // Refs for cleanup
+  const timeoutRef = useRef(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const id = params.get("id");
     if (id) {
       loadData(id);
     }
-  }, [location.search]);
+    
+    // Cleanup function
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [id]);
 
   useEffect(() => {
     loadTeamMembers();
@@ -166,8 +174,12 @@ export default function DeliverableDetail() {
     }
     setIsUpdatingStatus(false);
     
-    // Clear message after 3 seconds
-    setTimeout(() => setUpdateMessage(null), 3000);
+    // Clear message after 3 seconds with cleanup
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setUpdateMessage(null);
+      timeoutRef.current = null;
+    }, 3000);
   };
 
   const handleAssigneeChange = async (newAssigneeEmail) => {
@@ -205,8 +217,12 @@ export default function DeliverableDetail() {
     }
     setIsUpdatingAssignee(false);
     
-    // Clear message after 3 seconds
-    setTimeout(() => setUpdateMessage(null), 3000);
+    // Clear message after 3 seconds with cleanup
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setUpdateMessage(null);
+      timeoutRef.current = null;
+    }, 3000);
   };
 
   const handleVersionUpload = (versionNumber) => {

@@ -95,11 +95,11 @@ class DataFilterService {
 
     if (user.role === 'client') {
       // Clients only see client-facing stages
-      return stages.filter(stage => {
-        // Remove internal stages
-        if (stage.client_facing === false) return false;
+      return stages.map(stage => {
+        // Only exclude stages explicitly marked as not client-facing
+        if (stage.client_facing === false) return null;
         
-        // Remove sensitive information
+        // Remove sensitive information but keep the stage
         const filtered = { ...stage };
         delete filtered.internal_notes;
         delete filtered.cost_estimate;
@@ -112,7 +112,7 @@ class DataFilterService {
         }
         
         return filtered;
-      });
+      }).filter(Boolean); // Remove nulls
     }
 
     // Agency and admin see everything

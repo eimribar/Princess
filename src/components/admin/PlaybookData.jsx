@@ -183,7 +183,7 @@ export const playbookData = [
         axis: "Business & Internal Axis",
         dependencies: [8],
         blocking_priority: "low",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 15, 
@@ -250,7 +250,7 @@ export const playbookData = [
         axis: "Strategy & Research Axis",
         dependencies: [18],
         blocking_priority: "high",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 20, 
@@ -263,7 +263,7 @@ export const playbookData = [
         axis: "Strategy & Research Axis",
         dependencies: [18],
         blocking_priority: "medium",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 21, 
@@ -276,7 +276,7 @@ export const playbookData = [
         axis: "Strategy & Research Axis",
         dependencies: [18],
         blocking_priority: "medium",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 22, 
@@ -484,7 +484,7 @@ export const playbookData = [
         axis: "Client Management Axis",
         dependencies: [35],
         blocking_priority: "high",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 38, 
@@ -668,7 +668,7 @@ export const playbookData = [
         axis: "Strategy & Research Axis",
         dependencies: [49, 50],
         blocking_priority: "critical",
-        resource_dependency: "roee_approval"
+        resource_dependency: "none"
     },
     { 
         number_index: 52, 
@@ -904,7 +904,7 @@ export const playbookData = [
         axis: "Creative Axis",
         dependencies: [68],
         blocking_priority: "high",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 70, 
@@ -1164,7 +1164,7 @@ export const playbookData = [
         axis: "Creative Axis",
         dependencies: [8],
         blocking_priority: "medium",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 90, 
@@ -1322,7 +1322,7 @@ export const playbookData = [
         axis: "Client Management Axis",
         dependencies: [93],
         blocking_priority: "low",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 102, 
@@ -1335,7 +1335,7 @@ export const playbookData = [
         axis: "Client Management Axis",
         dependencies: [93],
         blocking_priority: "low",
-        resource_dependency: "client_input"
+        resource_dependency: "client_materials"
     },
     { 
         number_index: 103, 

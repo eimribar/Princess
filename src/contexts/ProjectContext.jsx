@@ -3,8 +3,8 @@
  * Global state management for project data with real-time synchronization
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Stage, Deliverable, TeamMember, Project } from '@/api/entities';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { SupabaseStage, SupabaseDeliverable, SupabaseTeamMember, SupabaseProject } from '@/api/supabaseEntities';
 import dependencyEngine from '@/services/dependencyEngine';
 import { toast } from 'sonner';
 import { addDays, parseISO, format } from 'date-fns';
@@ -21,6 +21,7 @@ export function useProject() {
 
 export function ProjectProvider({ children }) {
   // Core state
+  const [currentProjectId, setCurrentProjectId] = useState(null);
   const [project, setProject] = useState(null);
   const [stages, setStages] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
@@ -45,7 +46,18 @@ export function ProjectProvider({ children }) {
 
   // Initialize data on mount
   useEffect(() => {
-    loadProjectData();
+    // Get project ID from URL or localStorage
+    const urlPath = window.location.pathname;
+    const match = urlPath.match(/\/dashboard\/([^\/]+)/);
+    const projectIdFromUrl = match ? match[1] : null;
+    
+    if (projectIdFromUrl) {
+      setCurrentProjectId(projectIdFromUrl);
+      loadProjectData(projectIdFromUrl);
+    } else {
+      loadProjectData();
+    }
+    
     initializeSync();
     
     return () => {
@@ -67,36 +79,170 @@ export function ProjectProvider({ children }) {
         parallel_tracks: stage.parallel_tracks || []
       }));
       
-      console.log('Initializing dependency engine with', processedStages.length, 'stages');
-      console.log('Sample stage with dependencies:', processedStages.find(s => s.dependencies && s.dependencies.length > 0));
+      // console.log('Initializing dependency engine with', processedStages.length, 'stages');
+      // console.log('Sample stage with dependencies:', processedStages.find(s => s.dependencies && s.dependencies.length > 0));
       dependencyEngine.initialize(processedStages);
     }
   }, [stages]);
 
   /**
+   * Recalculate all stage dates based on dependencies and project start date
+   */
+  const recalculateAllStageDates = async (stages, projectStartDate) => {
+    if (!stages || stages.length === 0) return stages;
+    
+    // Parse the project start date
+    const startDate = typeof projectStartDate === 'string' ? parseISO(projectStartDate) : projectStartDate;
+    
+    // Sort stages by number_index to process in order
+    const sortedStages = [...stages].sort((a, b) => a.number_index - b.number_index);
+    
+    // Create a map for quick lookup
+    const stageMap = new Map(sortedStages.map(s => [s.id, s]));
+    
+    // Track calculated dates
+    const calculatedDates = new Map();
+    
+    // Recursive function to calculate dates for a stage and its dependencies
+    const calculateStageDate = (stageId, visited = new Set()) => {
+      if (visited.has(stageId)) return null; // Circular dependency check
+      if (calculatedDates.has(stageId)) return calculatedDates.get(stageId);
+      
+      visited.add(stageId);
+      const stage = stageMap.get(stageId);
+      if (!stage) return null;
+      
+      let stageStartDate = startDate;
+      
+      // If stage has dependencies, calculate based on latest dependency end date
+      if (stage.dependencies && stage.dependencies.length > 0) {
+        let latestEndDate = startDate;
+        
+        for (const depId of stage.dependencies) {
+          const depDates = calculateStageDate(depId, new Set(visited));
+          if (depDates && depDates.end) {
+            const depEnd = typeof depDates.end === 'string' ? parseISO(depDates.end) : depDates.end;
+            if (depEnd > latestEndDate) {
+              latestEndDate = depEnd;
+            }
+          }
+        }
+        
+        // Start this stage 1 day after the latest dependency ends
+        stageStartDate = addDays(latestEndDate, 1);
+      }
+      
+      // Calculate end date based on duration
+      const duration = stage.estimated_duration || 3; // Default 3 days
+      const stageEndDate = addDays(stageStartDate, duration);
+      
+      const dates = {
+        start: format(stageStartDate, 'yyyy-MM-dd'),
+        end: format(stageEndDate, 'yyyy-MM-dd')
+      };
+      
+      calculatedDates.set(stageId, dates);
+      return dates;
+    };
+    
+    // Calculate dates for all stages
+    const updatedStages = sortedStages.map(stage => {
+      const dates = calculateStageDate(stage.id);
+      if (dates) {
+        return {
+          ...stage,
+          start_date: dates.start,
+          end_date: dates.end
+        };
+      }
+      return stage;
+    });
+    
+    // Update dates in database for persistence (optional, batch update)
+    // This is commented out to avoid too many database updates during testing
+    // You can enable it when ready for production
+    /*
+    try {
+      const updatePromises = updatedStages.map(stage => 
+        SupabaseStage.update(stage.id, {
+          start_date: stage.start_date,
+          end_date: stage.end_date
+        })
+      );
+      await Promise.all(updatePromises);
+    } catch (error) {
+      console.error('Error updating stage dates in database:', error);
+    }
+    */
+    
+    return updatedStages;
+  };
+
+  /**
    * Load all project data
    */
-  const loadProjectData = async () => {
+  const loadProjectData = async (projectId = null) => {
     try {
       setIsLoading(true);
       
-      const [projectsData, stagesData, deliverablesData, teamData] = await Promise.all([
-        Project.list(),
-        Stage.list(),
-        Deliverable.list(),
-        TeamMember.list()
-      ]);
+      // If we have a specific project ID, load that project's data
+      if (projectId) {
+        const [projectData, stagesData, deliverablesData, teamData] = await Promise.all([
+          SupabaseProject.get(projectId).catch(() => null),
+          SupabaseStage.filter({ project_id: projectId }),
+          SupabaseDeliverable.filter({ project_id: projectId }),
+          SupabaseTeamMember.filter({ project_id: projectId }) // Fixed: Team members are now project-specific
+        ]);
 
-      if (projectsData && projectsData.length > 0) {
-        setProject(projectsData[0]);
+        if (projectData) {
+          setProject(projectData);
+          setCurrentProjectId(projectId);
+        }
+        
+        // Recalculate dates if we have stages and a project start date
+        let processedStages = stagesData || [];
+        if (processedStages.length > 0 && projectData?.start_date) {
+          processedStages = await recalculateAllStageDates(processedStages, projectData.start_date);
+        }
+        
+        setStages(processedStages);
+        setDeliverables(deliverablesData || []);
+        setTeamMembers(teamData || []);
+      } else {
+        // Load first available project
+        const projectsData = await SupabaseProject.list();
+        
+        if (projectsData && projectsData.length > 0) {
+          const firstProject = projectsData[0];
+          setProject(firstProject);
+          setCurrentProjectId(firstProject.id);
+          
+          // Load data for the first project
+          const [stagesData, deliverablesData, teamData] = await Promise.all([
+            SupabaseStage.filter({ project_id: firstProject.id }),
+            SupabaseDeliverable.filter({ project_id: firstProject.id }),
+            SupabaseTeamMember.filter({ project_id: firstProject.id }) // Fixed: Team members are now project-specific
+          ]);
+          
+          // Recalculate dates if we have stages and a project start date
+          let processedStages = stagesData || [];
+          if (processedStages.length > 0 && firstProject?.start_date) {
+            processedStages = await recalculateAllStageDates(processedStages, firstProject.start_date);
+          }
+          
+          setStages(processedStages);
+          setDeliverables(deliverablesData || []);
+          setTeamMembers(teamData || []);
+        } else {
+          // No projects available
+          setStages([]);
+          setDeliverables([]);
+          setTeamMembers([]);
+        }
       }
       
-      setStages(stagesData || []);
-      setDeliverables(deliverablesData || []);
-      setTeamMembers(teamData || []);
-      
     } catch (error) {
-      console.error('Failed to load project data:', error);
+      // console.error('Failed to load project data:', error);
       toast.error('Failed to load project data');
     } finally {
       setIsLoading(false);
@@ -230,7 +376,7 @@ export function ProjectProvider({ children }) {
       ));
       
       // Persist to backend
-      await Stage.update(stageId, updates);
+      await SupabaseStage.update(stageId, updates);
       
       // Broadcast to other tabs
       broadcastChange('stage_update', { id: stageId, updates });
@@ -242,7 +388,7 @@ export function ProjectProvider({ children }) {
       return true;
       
     } catch (error) {
-      console.error('Failed to update stage:', error);
+      // console.error('Failed to update stage:', error);
       toast.error('Failed to update stage');
       return false;
     } finally {
@@ -264,7 +410,7 @@ export function ProjectProvider({ children }) {
       saveToHistory();
       
       // Apply main change
-      await Stage.update(stageId, updates);
+      await SupabaseStage.update(stageId, updates);
       setStages(prev => prev.map(s => 
         s.id === stageId ? { ...s, ...updates } : s
       ));
@@ -289,7 +435,7 @@ export function ProjectProvider({ children }) {
           end_date: newEndDate
         };
         
-        await Stage.update(affected.stageId, cascadeUpdates);
+        await SupabaseStage.update(affected.stageId, cascadeUpdates);
         setStages(prev => prev.map(s => 
           s.id === affected.stageId ? { ...s, ...cascadeUpdates } : s
         ));
@@ -336,8 +482,8 @@ export function ProjectProvider({ children }) {
       return true;
       
     } catch (error) {
-      console.error('Failed to apply pending changes:', error);
-      console.error('Pending changes data:', pendingChanges);
+      // console.error('Failed to apply pending changes:', error);
+      // console.error('Pending changes data:', pendingChanges);
       toast.error(`Failed to apply changes: ${error.message || 'Unknown error'}`);
       setPendingChanges(null); // Clear pending changes to prevent stuck state
       return false;
@@ -367,7 +513,7 @@ export function ProjectProvider({ children }) {
       ));
       
       // Persist to backend
-      await Deliverable.update(deliverableId, updates);
+      await SupabaseDeliverable.update(deliverableId, updates);
       
       // If deliverable is linked to a stage, update stage dates
       const deliverable = deliverables.find(d => d.id === deliverableId);
@@ -390,7 +536,7 @@ export function ProjectProvider({ children }) {
       return true;
       
     } catch (error) {
-      console.error('Failed to update deliverable:', error);
+      // console.error('Failed to update deliverable:', error);
       toast.error('Failed to update deliverable');
       return false;
     }
@@ -408,7 +554,7 @@ export function ProjectProvider({ children }) {
       
       // Apply all updates
       for (const { id, updates } of stageUpdates) {
-        await Stage.update(id, updates);
+        await SupabaseStage.update(id, updates);
         setStages(prev => prev.map(s => 
           s.id === id ? { ...s, ...updates } : s
         ));
@@ -420,7 +566,7 @@ export function ProjectProvider({ children }) {
       return true;
       
     } catch (error) {
-      console.error('Failed to batch update stages:', error);
+      // console.error('Failed to batch update stages:', error);
       toast.error('Failed to update stages');
       return false;
     } finally {
@@ -489,6 +635,57 @@ export function ProjectProvider({ children }) {
       );
       
       toast.info('Change redone');
+    }
+  };
+
+  /**
+   * Switch to a different project
+   */
+  const switchProject = async (projectId) => {
+    if (projectId === currentProjectId) return;
+    
+    console.log(`🔄 Switching from project ${currentProjectId} to ${projectId}`);
+    setIsLoading(true);
+    
+    // CRITICAL: Clear ALL data completely before switching
+    setProject(null);
+    setStages([]);
+    setDeliverables([]);
+    setTeamMembers([]);
+    setSelectedStage(null);
+    setPendingChanges(null);
+    setHistory([]);
+    setHistoryIndex(-1);
+    
+    // Clear any cached data from localStorage
+    const keysToRemove = [
+      'princess_data',
+      'stages_cache',
+      'deliverables_cache',
+      'team_cache',
+      `project_${currentProjectId}`,
+      `stages_${currentProjectId}`,
+      `deliverables_${currentProjectId}`
+    ];
+    
+    keysToRemove.forEach(key => {
+      if (localStorage.getItem(key)) {
+        console.log(`  Clearing cache: ${key}`);
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Update current project ID
+    setCurrentProjectId(projectId);
+    
+    // Force a clean load of the new project data
+    try {
+      await loadProjectData(projectId);
+      console.log(`✅ Successfully switched to project ${projectId}`);
+    } catch (error) {
+      console.error(`❌ Failed to switch to project ${projectId}:`, error);
+      toast.error('Failed to switch project. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -583,8 +780,9 @@ export function ProjectProvider({ children }) {
     return Math.random() * 100;
   };
 
-  const value = {
+  const value = useMemo(() => ({
     // Core data
+    currentProjectId,
     project,
     stages,
     deliverables,
@@ -623,9 +821,40 @@ export function ProjectProvider({ children }) {
     // Subscription
     subscribe,
     
+    // Project management
+    switchProject,
+    
     // Reload data
-    reloadData: loadProjectData
-  };
+    reloadData: () => loadProjectData(currentProjectId)
+  }), [
+    currentProjectId,
+    project,
+    stages,
+    deliverables,
+    teamMembers,
+    isLoading,
+    selectedStage,
+    pendingChanges,
+    isValidating,
+    updateStage,
+    updateDeliverable,
+    batchUpdateStages,
+    applyPendingChanges,
+    cancelPendingChanges,
+    undo,
+    redo,
+    historyIndex,
+    history.length,
+    switchProject,
+    getStageDependencies,
+    getStageDependents,
+    getCriticalPath,
+    getProjectProgress,
+    getUpcomingMilestones,
+    getResourceAvailability,
+    subscribe,
+    loadProjectData
+  ]);
 
   return (
     <ProjectContext.Provider value={value}>

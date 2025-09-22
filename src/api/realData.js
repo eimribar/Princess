@@ -286,7 +286,7 @@ const realTeamMembers = [
     is_decision_maker: true,
     phone: "+1-555-0123",
     linkedin: "https://linkedin.com/in/sarahjohnson",
-    avatar: "https://images.unsplash.com/photo-1494790108755-2616b612b5e5?w=150",
+    profile_image: "https://images.unsplash.com/photo-1494790108755-2616b612b5e5?w=150",
     created_date: "2024-01-15T09:00:00Z"
   },
   {
@@ -297,7 +297,7 @@ const realTeamMembers = [
     is_decision_maker: true,
     phone: "+1-555-0124",
     linkedin: "https://linkedin.com/in/michaelchen",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+    profile_image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
     created_date: "2024-01-15T09:00:00Z"
   },
   {
@@ -308,7 +308,7 @@ const realTeamMembers = [
     is_decision_maker: false,
     phone: "+1-555-0125",
     linkedin: "https://linkedin.com/in/emilyrodriguez",
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+    profile_image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     created_date: "2024-01-15T09:00:00Z"
   },
   {
@@ -319,7 +319,7 @@ const realTeamMembers = [
     is_decision_maker: false,
     phone: "+1-555-0126",
     linkedin: "https://linkedin.com/in/davidkim",
-    avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150",
+    profile_image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150",
     created_date: "2024-01-15T09:00:00Z"
   },
   {
@@ -330,7 +330,7 @@ const realTeamMembers = [
     is_decision_maker: false,
     phone: "+1-555-0127",
     linkedin: "https://linkedin.com/in/lisapark",
-    avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150",
+    profile_image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150",
     created_date: "2024-01-15T09:00:00Z"
   }
 ];

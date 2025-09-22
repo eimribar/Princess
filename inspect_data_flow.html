@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Princess Data Inspector</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .section {
+            background: #000;
+            padding: 15px;
+            margin: 10px 0;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+        }
+        h2 {
+            color: #ffff00;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 5px;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .error {
+            color: #ff0000;
+        }
+        .warning {
+            color: #ff9900;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Princess Data Deep Inspector</h1>
+    
+    <button onclick="inspectEverything()">Inspect All Data Sources</button>
+    <button onclick="trackDataFlow()">Track Data Flow</button>
+    <button onclick="findContamination()">Find Contamination Source</button>
+    
+    <div id="output"></div>
+    
+    <script>
+    function inspectEverything() {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        
+        // 1. Check localStorage
+        addSection('localStorage Contents', () => {
+            const data = {};
+            for (let key in localStorage) {
+                const value = localStorage.getItem(key);
+                try {
+                    const parsed = JSON.parse(value);
+                    if (key === 'princess_data' && parsed.stages) {
+                        data[key] = {
+                            projects: parsed.projects?.length || 0,
+                            stages: parsed.stages?.length || 0,
+                            stagesByProject: groupByProject(parsed.stages),
+                            deliverables: parsed.deliverables?.length || 0,
+                            sample_stages: parsed.stages?.slice(0, 3)
+                        };
+                    } else {
+                        data[key] = summarize(parsed);
+                    }
+                } catch {
+                    data[key] = value.substring(0, 100) + '...';
+                }
+            }
+            return data;
+        });
+        
+        // 2. Check window/global objects
+        addSection('Global Data Objects', () => {
+            return {
+                'window.__PROJECT_DATA__': window.__PROJECT_DATA__ || 'undefined',
+                'window.__STAGES__': window.__STAGES__?.length || 'undefined',
+                'React DevTools': window.__REACT_DEVTOOLS_GLOBAL_HOOK__ ? 'Present' : 'Not found'
+            };
+        });
+        
+        // 3. Check sessionStorage
+        addSection('sessionStorage Contents', () => {
+            const data = {};
+            for (let key in sessionStorage) {
+                data[key] = sessionStorage.getItem(key).substring(0, 100);
+            }
+            return data;
+        });
+        
+        // 4. Check IndexedDB
+        addSection('IndexedDB Databases', async () => {
+            try {
+                const databases = await indexedDB.databases();
+                return databases.map(db => ({ name: db.name, version: db.version }));
+            } catch (e) {
+                return 'Not accessible or empty';
+            }
+        });
+    }
+    
+    function trackDataFlow() {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        
+        addSection('Data Flow Analysis', () => {
+            const princess_data = localStorage.getItem('princess_data');
+            if (!princess_data) return 'No princess_data found';
+            
+            const data = JSON.parse(princess_data);
+            const analysis = {
+                total_stages: data.stages?.length || 0,
+                unique_project_ids: [...new Set(data.stages?.map(s => s.project_id))],
+                stages_without_project_id: data.stages?.filter(s => !s.project_id).length || 0,
+                stages_by_status: {},
+                contaminated_stages: []
+            };
+            
+            // Count stages by status
+            data.stages?.forEach(stage => {
+                const status = stage.status || 'undefined';
+                analysis.stages_by_status[status] = (analysis.stages_by_status[status] || 0) + 1;
+                
+                // Find contaminated stages (completed but shouldn't be)
+                if (status === 'completed' || status === 'in_progress') {
+                    analysis.contaminated_stages.push({
+                        id: stage.id,
+                        name: stage.name,
+                        project_id: stage.project_id,
+                        status: stage.status
+                    });
+                }
+            });
+            
+            return analysis;
+        });
+        
+        // Check for duplicate stages
+        addSection('Duplicate Detection', () => {
+            const princess_data = localStorage.getItem('princess_data');
+            if (!princess_data) return 'No data';
+            
+            const data = JSON.parse(princess_data);
+            const stagesByNumber = {};
+            
+            data.stages?.forEach(stage => {
+                const key = `${stage.project_id}_${stage.number_index}`;
+                if (!stagesByNumber[key]) {
+                    stagesByNumber[key] = [];
+                }
+                stagesByNumber[key].push(stage);
+            });
+            
+            const duplicates = {};
+            Object.entries(stagesByNumber).forEach(([key, stages]) => {
+                if (stages.length > 1) {
+                    duplicates[key] = stages.map(s => ({
+                        id: s.id,
+                        status: s.status,
+                        created_at: s.created_at
+                    }));
+                }
+            });
+            
+            return {
+                total_duplicates: Object.keys(duplicates).length,
+                duplicates: duplicates
+            };
+        });
+    }
+    
+    function findContamination() {
+        const output = document.getElementById('output');
+        output.innerHTML = '';
+        
+        addSection('Contamination Sources', () => {
+            const issues = [];
+            
+            // Check princess_data
+            const princess_data = localStorage.getItem('princess_data');
+            if (princess_data) {
+                const data = JSON.parse(princess_data);
+                
+                // Issue 1: Old stages without project_id
+                const orphanStages = data.stages?.filter(s => !s.project_id) || [];
+                if (orphanStages.length > 0) {
+                    issues.push({
+                        type: 'CRITICAL',
+                        issue: 'Orphan stages without project_id',
+                        count: orphanStages.length,
+                        sample: orphanStages.slice(0, 3)
+                    });
+                }
+                
+                // Issue 2: Stages with wrong status
+                const wrongStatus = data.stages?.filter(s => 
+                    s.status && s.status !== 'not_started' && s.status !== 'not_ready'
+                ) || [];
+                if (wrongStatus.length > 0) {
+                    issues.push({
+                        type: 'CRITICAL',
+                        issue: 'Stages with non-initial status',
+                        count: wrongStatus.length,
+                        statuses: [...new Set(wrongStatus.map(s => s.status))]
+                    });
+                }
+                
+                // Issue 3: Projects named "Yess"
+                const yessProjects = data.projects?.filter(p => 
+                    p.name === 'Yess' || p.name === 'Yess AI'
+                ) || [];
+                if (yessProjects.length > 0) {
+                    issues.push({
+                        type: 'WARNING',
+                        issue: 'Projects with corrupted names',
+                        count: yessProjects.length,
+                        projects: yessProjects
+                    });
+                }
+            }
+            
+            // Check for other storage keys
+            for (let key in localStorage) {
+                if (key.startsWith('project_') || key.includes('stages')) {
+                    issues.push({
+                        type: 'INFO',
+                        issue: `Found legacy storage key: ${key}`,
+                        size: localStorage.getItem(key).length
+                    });
+                }
+            }
+            
+            return issues;
+        });
+        
+        // Suggest fixes
+        addSection('Recommended Actions', () => {
+            return [
+                '1. Clear ALL localStorage completely',
+                '2. Check if Supabase is caching data',
+                '3. Verify ProjectContext is not holding stale data',
+                '4. Check if Stage.list() is filtering correctly',
+                '5. Ensure project_id is being set on all new stages'
+            ];
+        });
+    }
+    
+    function groupByProject(stages) {
+        const grouped = {};
+        stages?.forEach(stage => {
+            const pid = stage.project_id || 'NO_PROJECT_ID';
+            grouped[pid] = (grouped[pid] || 0) + 1;
+        });
+        return grouped;
+    }
+    
+    function summarize(obj) {
+        if (Array.isArray(obj)) {
+            return `Array(${obj.length})`;
+        }
+        if (obj && typeof obj === 'object') {
+            return {
+                keys: Object.keys(obj).slice(0, 5),
+                total_keys: Object.keys(obj).length
+            };
+        }
+        return obj;
+    }
+    
+    function addSection(title, contentFn) {
+        const output = document.getElementById('output');
+        const section = document.createElement('div');
+        section.className = 'section';
+        
+        const h2 = document.createElement('h2');
+        h2.textContent = title;
+        section.appendChild(h2);
+        
+        const pre = document.createElement('pre');
+        try {
+            const content = contentFn();
+            if (content instanceof Promise) {
+                content.then(data => {
+                    pre.textContent = JSON.stringify(data, null, 2);
+                });
+            } else {
+                pre.textContent = JSON.stringify(content, null, 2);
+            }
+        } catch (e) {
+            pre.className = 'error';
+            pre.textContent = 'Error: ' + e.message;
+        }
+        
+        section.appendChild(pre);
+        output.appendChild(section);
+    }
+    
+    // Auto-run on load
+    window.onload = () => {
+        inspectEverything();
+    };
+    </script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Data Inspector</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 40px;
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #f9fafb;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h1 { color: #111827; }
+        h2 { color: #374151; margin-top: 30px; }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #2563eb; }
+        button.danger {
+            background: #ef4444;
+        }
+        button.danger:hover { background: #dc2626; }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 6px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+        }
+        .error { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+        .success { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+        .warning { background: #fef3c7; border-color: #fbbf24; color: #92400e; }
+        pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #e5e7eb;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        .project-card {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .highlight {
+            background: yellow;
+            padding: 2px 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Supabase Data Inspector</h1>
+        <p>Check what's actually stored in your Supabase database vs localStorage</p>
+        
+        <div>
+            <button onclick="checkSupabase()">🔍 Check Supabase Data</button>
+            <button onclick="checkLocalStorage()">💾 Check localStorage</button>
+            <button onclick="compareData()">🔄 Compare Both</button>
+            <button onclick="cleanDuplicates()" class="danger">🧹 Clean Duplicate Projects</button>
+        </div>
+
+        <div id="status" class="status">Ready to inspect data...</div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Supabase config
+        const SUPABASE_URL = 'https://orpmntxrcdongxmetbrk.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ycG1udHhyY2Rvbmd4bWV0YnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2NTI4OTMsImV4cCI6MjA3MzIyODg5M30.WVLaqSqstXkKczetwZ-T1m80fhsc6gUbzqDjqr2_Frs';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.innerHTML = message;
+        }
+        
+        async function checkSupabase() {
+            updateStatus('Checking Supabase database...', 'info');
+            const results = document.getElementById('results');
+            let html = '<h2>📊 Supabase Database Contents</h2>';
+            
+            try {
+                // Get all projects
+                const { data: projects, error: projectError } = await supabase
+                    .from('projects')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (projectError) throw projectError;
+                
+                html += `<h3>Projects (${projects?.length || 0})</h3>`;
+                
+                if (projects && projects.length > 0) {
+                    // Group projects by name to find duplicates
+                    const projectsByName = {};
+                    projects.forEach(p => {
+                        const name = p.name || 'Unnamed';
+                        if (!projectsByName[name]) projectsByName[name] = [];
+                        projectsByName[name].push(p);
+                    });
+                    
+                    for (const [name, projectList] of Object.entries(projectsByName)) {
+                        const isDuplicate = projectList.length > 1;
+                        html += `<div class="project-card ${isDuplicate ? 'warning' : ''}">`;
+                        html += `<h4>${name} ${isDuplicate ? `<span class="highlight">(${projectList.length} duplicates!)</span>` : ''}</h4>`;
+                        
+                        for (const project of projectList) {
+                            html += `<details><summary>ID: ${project.id}</summary>`;
+                            html += `<pre>${JSON.stringify(project, null, 2)}</pre>`;
+                            
+                            // Get stages for this project
+                            const { data: stages } = await supabase
+                                .from('stages')
+                                .select('id, number_index, name, status')
+                                .eq('project_id', project.id)
+                                .order('number_index');
+                            
+                            html += `<p>Stages: ${stages?.length || 0}</p>`;
+                            if (stages && stages.length > 0) {
+                                const statusCounts = {};
+                                stages.forEach(s => {
+                                    statusCounts[s.status] = (statusCounts[s.status] || 0) + 1;
+                                });
+                                html += `<p>Status breakdown: ${JSON.stringify(statusCounts)}</p>`;
+                                
+                                // Show first few stages with their status
+                                html += '<p>First 5 stages:</p><ul>';
+                                stages.slice(0, 5).forEach(s => {
+                                    html += `<li>${s.number_index}. ${s.name} - <strong>${s.status}</strong></li>`;
+                                });
+                                html += '</ul>';
+                            }
+                            
+                            // Get deliverables
+                            const { data: deliverables } = await supabase
+                                .from('deliverables')
+                                .select('id, name, status')
+                                .eq('project_id', project.id);
+                            
+                            html += `<p>Deliverables: ${deliverables?.length || 0}</p>`;
+                            html += '</details>';
+                        }
+                        html += '</div>';
+                    }
+                } else {
+                    html += '<p>No projects found in Supabase</p>';
+                }
+                
+                updateStatus('✅ Supabase check complete', 'success');
+            } catch (error) {
+                html += `<div class="error">Error: ${error.message}</div>`;
+                updateStatus('❌ Error checking Supabase', 'error');
+            }
+            
+            results.innerHTML = html;
+        }
+        
+        function checkLocalStorage() {
+            const results = document.getElementById('results');
+            let html = '<h2>💾 localStorage Contents</h2>';
+            
+            const princessData = localStorage.getItem('princess_data');
+            if (princessData) {
+                const data = JSON.parse(princessData);
+                html += '<h3>princess_data</h3>';
+                html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } else {
+                html += '<p>No princess_data in localStorage</p>';
+            }
+            
+            results.innerHTML = html;
+            updateStatus('✅ localStorage check complete', 'success');
+        }
+        
+        async function compareData() {
+            updateStatus('Comparing Supabase and localStorage...', 'info');
+            const results = document.getElementById('results');
+            let html = '<h2>🔄 Data Comparison</h2>';
+            
+            // Get Supabase data
+            const { data: supabaseProjects } = await supabase
+                .from('projects')
+                .select('*');
+            
+            // Get localStorage data
+            const localData = localStorage.getItem('princess_data');
+            const localProjects = localData ? JSON.parse(localData).projects || [] : [];
+            
+            html += '<table>';
+            html += '<tr><th>Source</th><th>Project Count</th><th>Project Names</th></tr>';
+            html += `<tr>
+                <td>Supabase</td>
+                <td>${supabaseProjects?.length || 0}</td>
+                <td>${supabaseProjects?.map(p => p.name).join(', ') || 'None'}</td>
+            </tr>`;
+            html += `<tr>
+                <td>localStorage</td>
+                <td>${localProjects.length}</td>
+                <td>${localProjects.map(p => p.name).join(', ') || 'None'}</td>
+            </tr>`;
+            html += '</table>';
+            
+            results.innerHTML = html;
+            updateStatus('✅ Comparison complete', 'success');
+        }
+        
+        async function cleanDuplicates() {
+            if (!confirm('⚠️ This will delete duplicate projects from Supabase, keeping only the most recent one. Continue?')) {
+                return;
+            }
+            
+            updateStatus('Cleaning duplicate projects...', 'info');
+            
+            try {
+                // Get all projects
+                const { data: projects, error } = await supabase
+                    .from('projects')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                
+                // Group by name
+                const projectsByName = {};
+                projects.forEach(p => {
+                    const name = p.name || 'Unnamed';
+                    if (!projectsByName[name]) projectsByName[name] = [];
+                    projectsByName[name].push(p);
+                });
+                
+                let deletedCount = 0;
+                for (const [name, projectList] of Object.entries(projectsByName)) {
+                    if (projectList.length > 1) {
+                        // Keep the first (most recent), delete the rest
+                        const toDelete = projectList.slice(1);
+                        for (const project of toDelete) {
+                            // Delete stages first
+                            await supabase
+                                .from('stages')
+                                .delete()
+                                .eq('project_id', project.id);
+                            
+                            // Delete deliverables
+                            await supabase
+                                .from('deliverables')
+                                .delete()
+                                .eq('project_id', project.id);
+                            
+                            // Delete project
+                            await supabase
+                                .from('projects')
+                                .delete()
+                                .eq('id', project.id);
+                            
+                            deletedCount++;
+                        }
+                    }
+                }
+                
+                updateStatus(`✅ Cleaned ${deletedCount} duplicate projects`, 'success');
+                checkSupabase(); // Refresh display
+            } catch (error) {
+                updateStatus(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Check on load
+        window.onload = () => {
+            checkSupabase();
+        };
+    </script>
+</body>
+</html>

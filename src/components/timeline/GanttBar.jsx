@@ -4,7 +4,7 @@ import { isWithinInterval, isSameDay, startOfDay, endOfDay, addDays, differenceI
 import { Lock, AlertTriangle, CheckCircle, Clock, Star, GripVertical } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDrag, useDrop } from 'react-dnd';
-import { useUser } from '@/contexts/UserContext';
+import { useUser } from '@/contexts/SupabaseUserContext';
 import { canManageTeamMember } from '@/lib/permissions';
 
 export default function GanttBar({ stage, timePeriods, zoom, onStageClick, onStageUpdate, onHover }) {

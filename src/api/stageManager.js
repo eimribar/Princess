@@ -3,7 +3,7 @@
  * Core system for managing the 104-step dependency-driven workflow
  */
 
-import { Stage, Comment, Project } from './entities';
+import { SupabaseStage as Stage, SupabaseComment as Comment, SupabaseProject as Project } from './supabaseEntities';
 import { 
   getDependencyStatus, 
   getCriticalPath, 
@@ -29,10 +29,14 @@ class StageManager {
     this.listeners.forEach(callback => callback(changes));
   }
 
-  // Get all stages with current status
-  async getAllStages() {
+  // Get all stages with current status for a specific project
+  async getAllStages(projectId) {
     try {
-      const stages = await Stage.list();
+      if (!projectId) {
+        console.warn('getAllStages called without projectId');
+        return [];
+      }
+      const stages = await Stage.filter({ project_id: projectId });
       return stages.sort((a, b) => a.number_index - b.number_index);
     } catch (error) {
       console.error('Failed to load stages:', error);
@@ -41,8 +45,8 @@ class StageManager {
   }
 
   // Calculate real progress based on dependencies and priorities
-  async calculateRealProgress() {
-    const stages = await this.getAllStages();
+  async calculateRealProgress(projectId) {
+    const stages = await this.getAllStages(projectId);
     
     if (stages.length === 0) return 0;
 
@@ -79,8 +83,8 @@ class StageManager {
   }
 
   // Get stages that are ready to start (all dependencies met)
-  async getReadyStages() {
-    const stages = await this.getAllStages();
+  async getReadyStages(projectId) {
+    const stages = await this.getAllStages(projectId);
     return stages.filter(stage => {
       const status = getDependencyStatus(stage, stages);
       return status === 'ready' && stage.status === 'not_started';
@@ -88,8 +92,8 @@ class StageManager {
   }
 
   // Get stages that are blocked by dependencies
-  async getBlockedStages() {
-    const stages = await this.getAllStages();
+  async getBlockedStages(projectId) {
+    const stages = await this.getAllStages(projectId);
     return stages.filter(stage => {
       const status = getDependencyStatus(stage, stages);
       return status === 'blocked' && stage.status === 'not_started';
@@ -97,20 +101,20 @@ class StageManager {
   }
 
   // Get stages currently in progress
-  async getInProgressStages() {
-    const stages = await this.getAllStages();
+  async getInProgressStages(projectId) {
+    const stages = await this.getAllStages(projectId);
     return stages.filter(stage => stage.status === 'in_progress');
   }
 
   // Get stages that are completed
-  async getCompletedStages() {
-    const stages = await this.getAllStages();
+  async getCompletedStages(projectId) {
+    const stages = await this.getAllStages(projectId);
     return stages.filter(stage => stage.status === 'completed');
   }
 
   // Find bottlenecks - stages that block many others
-  async getBottlenecks() {
-    const stages = await this.getAllStages();
+  async getBottlenecks(projectId) {
+    const stages = await this.getAllStages(projectId);
     const bottlenecks = [];
 
     stages.forEach(stage => {
@@ -138,8 +142,12 @@ class StageManager {
   // Mark a stage as complete and cascade updates
   async completeStage(stageId, completedBy = 'Current User') {
     try {
-      const stages = await this.getAllStages();
-      const stage = stages.find(s => s.id === stageId);
+      // First get the stage to find its project
+      const stage = await Stage.get(stageId);
+      if (!stage) {
+        throw new Error(`Stage ${stageId} not found`);
+      }
+      const stages = await this.getAllStages(stage.project_id);
       
       if (!stage) {
         throw new Error(`Stage ${stageId} not found`);
@@ -173,7 +181,7 @@ class StageManager {
       const updatedStages = await this.updateDependentStages(stageId);
 
       // Calculate new progress
-      const newProgress = await this.calculateRealProgress();
+      const newProgress = await this.calculateRealProgress(stage.project_id);
       
       // Update project progress
       if (stage.project_id) {
@@ -206,8 +214,12 @@ class StageManager {
   // Start working on a stage
   async startStage(stageId, assignedTo = 'Current User') {
     try {
-      const stages = await this.getAllStages();
-      const stage = stages.find(s => s.id === stageId);
+      // First get the stage to find its project
+      const stage = await Stage.get(stageId);
+      if (!stage) {
+        throw new Error(`Stage ${stageId} not found`);
+      }
+      const stages = await this.getAllStages(stage.project_id);
       
       if (!stage) {
         throw new Error(`Stage ${stageId} not found`);
@@ -256,7 +268,10 @@ class StageManager {
 
   // Update stages that become ready when dependencies are met
   async updateDependentStages(completedStageId) {
-    const stages = await this.getAllStages();
+    // Get the completed stage first to find project
+    const completedStage = await Stage.get(completedStageId);
+    if (!completedStage) return [];
+    const stages = await this.getAllStages(completedStage.project_id);
     const updatedStages = [];
 
     for (const stage of stages) {
@@ -292,8 +307,8 @@ class StageManager {
   }
 
   // Validate entire project workflow integrity
-  async validateWorkflow() {
-    const stages = await this.getAllStages();
+  async validateWorkflow(projectId) {
+    const stages = await this.getAllStages(projectId);
     const issues = validateDependencyChain(stages);
     
     // Additional validations
@@ -313,16 +328,16 @@ class StageManager {
   }
 
   // Get workflow statistics
-  async getWorkflowStats() {
+  async getWorkflowStats(projectId) {
     const [ready, blocked, inProgress, completed] = await Promise.all([
-      this.getReadyStages(),
-      this.getBlockedStages(),
-      this.getInProgressStages(),
-      this.getCompletedStages()
+      this.getReadyStages(projectId),
+      this.getBlockedStages(projectId),
+      this.getInProgressStages(projectId),
+      this.getCompletedStages(projectId)
     ]);
 
-    const progress = await this.calculateRealProgress();
-    const bottlenecks = await this.getBottlenecks();
+    const progress = await this.calculateRealProgress(projectId);
+    const bottlenecks = await this.getBottlenecks(projectId);
 
     return {
       ready: ready.length,
@@ -363,7 +378,7 @@ class StageManager {
       });
 
       // Recalculate progress
-      const newProgress = await this.calculateRealProgress();
+      const newProgress = await this.calculateRealProgress(stage.project_id);
       if (stage.project_id) {
         await Project.update(stage.project_id, { 
           progress_percentage: newProgress,

@@ -113,7 +113,7 @@ function getPermissionsByRole(role) {
         canManageTeam: true,
         canManageProject: true,
         canEditPlaybook: false,
-        canViewAdmin: false
+        canViewAdmin: true  // Fixed: Allow agency to view admin
       };
     
     case 'client':

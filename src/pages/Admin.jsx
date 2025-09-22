@@ -19,6 +19,7 @@ import { motion } from "framer-motion";
 import PlaybookSeeder from "../components/admin/PlaybookSeeder";
 import DeliverablePlaybook from "../components/admin/DeliverablePlaybook";
 import TemplateManager from "../components/admin/PlaybookEditor/TemplateManager";
+import ProjectManagement from "../components/admin/ProjectManagement";
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -88,7 +89,7 @@ export default function Admin() {
           <Button 
             size="lg"
             className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-            onClick={() => navigate('/projectsetup')}
+            onClick={() => navigate('/project-initiation')}
           >
             <Rocket className="w-5 h-5 mr-2" />
             Start New Project

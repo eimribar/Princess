@@ -22,7 +22,7 @@ export default function PremiumDeliverablesStatus({ deliverables }) {
     completed: deliverables?.filter(d => d.status === 'completed') || [],
     in_progress: deliverables?.filter(d => d.status === 'in_progress') || [],
     pending_approval: deliverables?.filter(d => d.status === 'pending_approval') || [],
-    not_started: deliverables?.filter(d => d.status === 'not_started') || []
+    not_started: deliverables?.filter(d => d.status === 'not_started' || d.status === 'draft') || []
   };
 
   const totalDeliverables = deliverables?.length || 0;

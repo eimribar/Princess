@@ -10,7 +10,7 @@ import { Edit2, Check } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import stageManager from '@/api/stageManager';
 import { getDependencyStatus } from './DependencyUtils';
-import { Stage } from '@/api/entities';
+import { SupabaseStage } from '@/api/supabaseEntities';
 
 export default function ProfessionalManagement({ stage, allStages, onStageUpdate, teamMembers, isReadOnly = false }) {
   const [dependencyStatus, setDependencyStatus] = useState('not_started');
@@ -53,7 +53,7 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
         });
       } else if (newStatus === 'blocked') {
         // Handle blocked status if needed
-        await Stage.update(stage.id, { status: 'not_started' });
+        await SupabaseStage.update(stage.id, { status: 'not_started' });
         toast({
           title: "Status Updated",
           description: "Stage marked as blocked",
@@ -74,7 +74,7 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
   const handleAssigneeChange = async (value) => {
     try {
       const email = value === 'unassigned' ? null : value;
-      await Stage.update(stage.id, { assigned_to: email });
+      await SupabaseStage.update(stage.id, { assigned_to: email });
       setSelectedAssignee(value);
       toast({
         title: "Assignee Updated",

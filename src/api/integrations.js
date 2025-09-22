@@ -40,20 +40,32 @@ export class Core {
         throw new Error('File size must be less than 5MB');
       }
       
-      // Create blob URL for local development
-      const url = URL.createObjectURL(file);
-      const id = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      console.log(`File uploaded successfully: ${file.name} (${file.size} bytes)`);
-      
-      return { 
-        file_url: url, 
-        url: url, 
-        id: id,
-        filename: file.name,
-        size: file.size,
-        type: file.type
-      };
+      // Convert to base64 data URL for persistence
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        const id = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        reader.onloadend = () => {
+          const base64Url = reader.result;
+          console.log(`File uploaded successfully: ${file.name} (${file.size} bytes)`);
+          
+          resolve({
+            file_url: base64Url, // base64 data URL
+            url: base64Url,
+            id: id,
+            filename: file.name,
+            size: file.size,
+            type: file.type
+          });
+        };
+        
+        reader.onerror = (error) => {
+          console.error('Error reading file:', error);
+          reject(new Error('Failed to read file'));
+        };
+        
+        reader.readAsDataURL(file);
+      });
     }
   };
 

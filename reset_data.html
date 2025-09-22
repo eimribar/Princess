@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Princess Data</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            background: #f9fafb;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h1 { 
+            color: #111827; 
+            margin-bottom: 10px;
+        }
+        .warning {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        button {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin: 10px;
+        }
+        button:hover { 
+            background: #dc2626; 
+        }
+        button.safe {
+            background: #3b82f6;
+        }
+        button.safe:hover {
+            background: #2563eb;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 6px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+        }
+        .success { 
+            background: #d1fae5; 
+            border-color: #6ee7b7; 
+            color: #065f46; 
+        }
+        .info {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            color: #1e40af;
+        }
+        pre {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .data-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Reset Princess Data</h1>
+        <p>Use this tool to completely clear all Princess project data and start fresh.</p>
+        
+        <div class="warning">
+            <strong>⚠️ Warning:</strong> These actions cannot be undone. All local data will be permanently deleted.
+        </div>
+
+        <div>
+            <button onclick="showCurrentData()" class="safe">🔍 Show Current Data</button>
+            <button onclick="clearLocalStorageOnly()">🗑️ Clear localStorage Only</button>
+            <button onclick="clearAllData()">💣 Clear EVERYTHING</button>
+            <button onclick="goToApp()" class="safe">🏠 Go to App</button>
+        </div>
+
+        <div id="status" class="status">Ready to reset data...</div>
+        
+        <div id="currentData" class="data-section" style="display: none;">
+            <h3>Current Data in localStorage:</h3>
+            <pre id="dataContent">Loading...</pre>
+        </div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.innerHTML = message;
+        }
+
+        function showCurrentData() {
+            const dataDiv = document.getElementById('currentData');
+            const content = document.getElementById('dataContent');
+            
+            dataDiv.style.display = 'block';
+            
+            const princessData = localStorage.getItem('princess_data');
+            if (princessData) {
+                try {
+                    const data = JSON.parse(princessData);
+                    const summary = {
+                        projects: data.projects?.length || 0,
+                        stages: data.stages?.length || 0,
+                        deliverables: data.deliverables?.length || 0,
+                        teamMembers: data.teamMembers?.length || 0,
+                        projectNames: data.projects?.map(p => p.name) || []
+                    };
+                    content.textContent = JSON.stringify(summary, null, 2);
+                    
+                    // Check for demo data
+                    const hasDemo = data.projects?.some(p => 
+                        p.name?.includes('Deutsch') || 
+                        p.client_name?.includes('Deutsch')
+                    );
+                    
+                    if (hasDemo) {
+                        updateStatus('⚠️ Demo data detected! You should clear this.', 'warning');
+                    } else if (data.projects?.length > 0) {
+                        updateStatus('✅ Found project data (no demo data)', 'info');
+                    } else {
+                        updateStatus('✅ No project data found', 'success');
+                    }
+                } catch (e) {
+                    content.textContent = 'Error parsing data: ' + e.message;
+                }
+            } else {
+                content.textContent = 'No princess_data found in localStorage';
+                updateStatus('✅ localStorage is clean', 'success');
+            }
+        }
+
+        function clearLocalStorageOnly() {
+            if (!confirm('Clear all localStorage data?')) return;
+            
+            updateStatus('Clearing localStorage...', 'info');
+            
+            // Clear princess data
+            localStorage.removeItem('princess_data');
+            localStorage.removeItem('princess_projects');
+            
+            // Clear any project-specific keys
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (
+                    key.startsWith('project_') || 
+                    key.startsWith('princess_') ||
+                    key.includes('deutsch') ||
+                    key.includes('Deutsch')
+                )) {
+                    keysToRemove.push(key);
+                }
+            }
+            
+            keysToRemove.forEach(key => {
+                localStorage.removeItem(key);
+            });
+            
+            updateStatus('✅ localStorage cleared successfully!', 'success');
+            
+            // Update the data display
+            setTimeout(() => showCurrentData(), 500);
+        }
+
+        function clearAllData() {
+            if (!confirm('This will clear ALL data including caches. Continue?')) return;
+            if (!confirm('FINAL WARNING: This cannot be undone!')) return;
+            
+            updateStatus('Clearing all data...', 'info');
+            
+            // Clear localStorage
+            localStorage.clear();
+            
+            // Clear sessionStorage
+            sessionStorage.clear();
+            
+            // Clear IndexedDB
+            if (window.indexedDB) {
+                indexedDB.databases().then(databases => {
+                    databases.forEach(db => {
+                        indexedDB.deleteDatabase(db.name);
+                    });
+                });
+            }
+            
+            // Clear caches
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => caches.delete(name));
+                });
+            }
+            
+            updateStatus('✅ All data cleared! Reloading in 2 seconds...', 'success');
+            
+            setTimeout(() => {
+                window.location.href = 'http://localhost:5173/dashboard';
+            }, 2000);
+        }
+
+        function goToApp() {
+            window.location.href = 'http://localhost:5173/dashboard';
+        }
+
+        // Show data on load
+        window.onload = () => {
+            showCurrentData();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Resource Dependency</title>
+</head>
+<body>
+    <h1>Fix Resource Dependency in localStorage</h1>
+    <button onclick="fixData()">Fix Data</button>
+    <pre id="output"></pre>
+    
+    <script>
+    function fixData() {
+        const storageKey = 'princess_data';
+        const data = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        
+        let fixed = 0;
+        
+        // Fix stages
+        if (data.stages) {
+            data.stages.forEach(stage => {
+                if (stage.resource_dependency === 'client_input') {
+                    stage.resource_dependency = 'client_materials';
+                    fixed++;
+                }
+            });
+        }
+        
+        // Save back
+        localStorage.setItem(storageKey, JSON.stringify(data));
+        
+        document.getElementById('output').textContent = `Fixed ${fixed} stages. Please refresh the page.`;
+        
+        // Also check if there's initialized data
+        const initializedData = localStorage.getItem('princess_initialized_data');
+        if (initializedData) {
+            const initData = JSON.parse(initializedData);
+            let initFixed = 0;
+            if (initData.stages) {
+                initData.stages.forEach(stage => {
+                    if (stage.resource_dependency === 'client_input') {
+                        stage.resource_dependency = 'client_materials';
+                        initFixed++;
+                    }
+                });
+                localStorage.setItem('princess_initialized_data', JSON.stringify(initData));
+            }
+            document.getElementById('output').textContent += `\nAlso fixed ${initFixed} stages in initialized data.`;
+        }
+    }
+    </script>
+</body>
+</html>

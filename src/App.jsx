@@ -2,11 +2,14 @@ import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import './App.css'
 import { Toaster } from "@/components/ui/toaster"
-import { useUser } from '@/contexts/UserContext'
-import AuthGuard from '@/guards/AuthGuard'
+import { useUser } from '@/contexts/SupabaseUserContext'
+import AuthGuard from '@/guards/SupabaseAuthGuard'
 
 // Main Layout (adapts based on user role)
 import Layout from '@/pages/Layout'
+
+// Components
+import ProjectRedirect from '@/components/ProjectRedirect'
 
 // Pages
 import Dashboard from '@/pages/Dashboard'
@@ -16,8 +19,13 @@ import Team from '@/pages/Team'
 import Timeline from '@/pages/Timeline'
 import Brandbook from '@/pages/Brandbook'
 import Admin from '@/pages/Admin'
-import ProjectSetup from '@/pages/ProjectSetup'
+import ProjectInitiation from '@/pages/ProjectInitiation'
 import OutofScope from '@/pages/OutofScope'
+import TestPage from '@/pages/TestPage'
+
+// Auth pages
+import Login from '@/pages/auth/Login'
+import InvitationSignup from '@/pages/auth/InvitationSignup'
 
 // Onboarding & Auth (to be created)
 // import Onboarding from '@/pages/Onboarding'
@@ -33,37 +41,51 @@ function App() {
 }
 
 function AppRoutes() {
-  const { user } = useUser()
+  const { user, isAuthenticated } = useUser()
   
-  // Default route based on role (everyone goes to /dashboard)
-  const defaultRoute = user ? '/dashboard' : '/login'
+  // Default route based on authentication
+  const defaultRoute = isAuthenticated ? '/dashboard' : '/auth/login'
 
   return (
     <Routes>
       {/* Root redirect */}
       <Route path="/" element={<Navigate to={defaultRoute} replace />} />
       
+      {/* Auth routes */}
+      <Route path="/auth/login" element={
+        <AuthGuard requireAuth={false}>
+          <Login />
+        </AuthGuard>
+      } />
+      <Route path="/invitation" element={
+        <AuthGuard requireAuth={false}>
+          <InvitationSignup />
+        </AuthGuard>
+      } />
+      
       {/* Authenticated routes - same for all roles, different content */}
       <Route path="/*" element={
-        <AuthGuard requireAuth={true} fallbackPath="/login">
+        <AuthGuard requireAuth={true}>
           <Layout>
             <Routes>
-              <Route path="dashboard" element={<Dashboard />} />
+              {/* Dashboard without projectId redirects to first project or creation */}
+              <Route path="dashboard" element={<ProjectRedirect />} />
+              <Route path="dashboard/:projectId" element={<Dashboard />} />
               <Route path="deliverables" element={<Deliverables />} />
               <Route path="deliverables/:id" element={<DeliverableDetail />} />
               <Route path="team" element={<Team />} />
               <Route path="timeline" element={<Timeline />} />
               <Route path="brandbook" element={<Brandbook />} />
               
-              {/* Admin-only routes */}
+              {/* Admin routes - accessible by admin and agency */}
               <Route path="admin" element={
-                <AuthGuard allowedRoles={['admin']}>
+                <AuthGuard allowedRoles={['admin', 'agency']}>
                   <Admin />
                 </AuthGuard>
               } />
-              <Route path="project-setup" element={
+              <Route path="project-initiation" element={
                 <AuthGuard allowedRoles={['admin', 'agency']}>
-                  <ProjectSetup />
+                  <ProjectInitiation />
                 </AuthGuard>
               } />
               <Route path="out-of-scope" element={
@@ -79,6 +101,14 @@ function AppRoutes() {
         </AuthGuard>
       } />
       
+      
+      {/* Test Page - for QA testing */}
+      <Route path="/test" element={
+        <AuthGuard requireAuth={false}>
+          <TestPage />
+        </AuthGuard>
+      } />
+      
       {/* Public routes (no auth required) */}
       <Route path="/public/brandbook/:projectId" element={<Brandbook isPublic={true} />} />
       
@@ -87,7 +117,7 @@ function AppRoutes() {
       {/* <Route path="/onboarding" element={<Onboarding />} /> */}
       
       {/* Legacy route support for backward compatibility */}
-      <Route path="/admin/*" element={<Navigate to="/" replace />} />
+      {/* Removed /admin/* redirect that was blocking admin access */}
       <Route path="/client/*" element={<Navigate to="/" replace />} />
       
       {/* 404 Page */}

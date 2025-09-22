@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Mail, Linkedin, Crown, Edit, User } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useUser } from '@/contexts/UserContext';
+import { useUser } from '@/contexts/SupabaseUserContext';
 import { canManageTeamMember } from '@/lib/permissions';
 
 // Custom Hook for outside click detection

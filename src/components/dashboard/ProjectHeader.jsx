@@ -4,7 +4,8 @@ import { Plus } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import NotificationBell from "./NotificationBell";
+import NotificationBell from "@/components/notifications/NotificationBell";
+import ProjectSelector from "./ProjectSelector";
 import SlackIcon from "../icons/SlackIcon";
 import GoogleDriveIcon from "../icons/GoogleDriveIcon";
 
@@ -15,9 +16,12 @@ export default function ProjectHeader({ project, onOpenOutOfScopeForm }) {
 
   return (
     <div>
+        <div className="mb-4">
+            <ProjectSelector />
+        </div>
         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
             <div>
-                <h1 className="text-3xl font-bold text-gray-900">{project?.name || "Deutsch & Co. Princess"}</h1>
+                <h1 className="text-3xl font-bold text-gray-900">{project?.name || "Loading..."}</h1>
                 <p className="text-gray-600 mt-2">
                     {milestoneDays > 0 ? `${milestoneDays} Days Until ${project?.milestone_name || 'Going out of stealth'}` : `Milestone Reached: ${project?.milestone_name || 'Going out of stealth'}`}
                 </p>

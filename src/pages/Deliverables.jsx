@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from "react";
-import { Deliverable, Stage } from "@/api/entities";
+import { SupabaseDeliverable, SupabaseStage } from "@/api/supabaseEntities";
+import { useProject } from '@/contexts/ProjectContext';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 
 export default function Deliverables() {
+  const { currentProjectId, stages: projectStages } = useProject();
   const [deliverables, setDeliverables] = useState([]);
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
@@ -34,16 +36,20 @@ export default function Deliverables() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    loadDeliverables();
-  }, []);
+    if (currentProjectId) {
+      loadDeliverables();
+    }
+  }, [currentProjectId]);
 
   const loadDeliverables = async () => {
+    if (!currentProjectId) return;
+    
     setIsLoading(true);
     try {
-      // Load both deliverables and stages
+      // Load deliverables for current project and use stages from context
       const [deliverablesData, stagesData] = await Promise.all([
-        Deliverable.list(),
-        Stage.list()
+        SupabaseDeliverable.filter({ project_id: currentProjectId }),
+        projectStages?.length > 0 ? Promise.resolve(projectStages) : SupabaseStage.filter({ project_id: currentProjectId })
       ]);
       
       // Create a map of stage_id to stage for quick lookup
@@ -86,7 +92,10 @@ export default function Deliverables() {
   };
 
   const getActionRequired = (deliverable) => {
-    const latestVersion = deliverable.versions?.[deliverable.versions.length - 1];
+    if (!deliverable.versions || deliverable.versions.length === 0) {
+      return false;
+    }
+    const latestVersion = deliverable.versions[deliverable.versions.length - 1];
     return latestVersion?.status === 'pending_approval';
   };
 
@@ -280,7 +289,7 @@ export default function Deliverables() {
                             <TableRow
                               key={deliverable.id}
                               className="hover:bg-gray-50/60 cursor-pointer group"
-                              onClick={() => navigate(createPageUrl(`DeliverableDetail?id=${deliverable.id}`))}
+                              onClick={() => navigate(`/deliverables/${deliverable.id}`)}
                             >
                               <TableCell className="text-center">
                                 {getStatusIcon(deliverable.status)}

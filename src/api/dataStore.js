@@ -4,6 +4,8 @@
  * Can be easily replaced with Supabase or custom API later
  */
 
+import { generateUUID } from '@/utils/uuid';
+
 class DataStore {
   constructor() {
     this.storageKey = 'princess_data';
@@ -30,7 +32,20 @@ class DataStore {
     try {
       const stored = localStorage.getItem(this.storageKey);
       if (stored) {
-        return JSON.parse(stored);
+        const data = JSON.parse(stored);
+        // Filter out any demo data (Deutsch & Co. Princess)
+        if (data.projects && data.projects.length > 0) {
+          const hasDemo = data.projects.some(p => 
+            p.name && p.name.includes('Deutsch') || 
+            p.client_name && p.client_name.includes('Deutsch')
+          );
+          if (hasDemo) {
+            console.warn('Demo data detected, clearing...');
+            localStorage.removeItem(this.storageKey);
+            return this.getDefaultData();
+          }
+        }
+        return data;
       }
     } catch (error) {
       console.warn('Failed to load data from localStorage:', error);
@@ -50,7 +65,8 @@ class DataStore {
 
   // Generate unique ID
   generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    // Use proper UUID generation to prevent collisions
+    return generateUUID();
   }
 
   // Generic CRUD operations
