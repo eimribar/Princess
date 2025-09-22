@@ -23,8 +23,8 @@ import {
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
 import NotificationBell from '@/components/notifications/NotificationBell';
-import ProjectSelector from '@/components/dashboard/ProjectSelector';
 import { useUser } from '@/contexts/SupabaseUserContext';
+import { useProject } from '@/contexts/ProjectContext';
 import { getVisibleNavigationItems, getRoleDisplayName, getRoleBadgeColor } from '@/lib/permissions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -44,6 +44,7 @@ export default function Layout({ children, currentPageName }) {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, setUserRole } = useUser();
+    const { project } = useProject();
     const [attentionCount, setAttentionCount] = useState(0);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     
@@ -238,7 +239,14 @@ export default function Layout({ children, currentPageName }) {
                 {/* Desktop header */}
                 <header className="hidden md:flex bg-white border-b border-gray-200 px-6 py-3">
                     <div className="flex items-center justify-between w-full">
-                        <ProjectSelector />
+                        {/* Simple project name display instead of dropdown */}
+                        <div className="flex items-center gap-2 text-sm">
+                            <FolderKanban className="w-4 h-4 text-gray-500" />
+                            <span className="text-gray-600">Project:</span>
+                            <span className="font-medium text-gray-900">
+                                {project?.name || 'No project selected'}
+                            </span>
+                        </div>
                         <div className="flex items-center gap-4">
                             <NotificationBell 
                                 onNotificationClick={handleNotificationClick}

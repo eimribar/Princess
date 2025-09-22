@@ -21,7 +21,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import stageManager from '@/api/stageManager';
 import { getDependencyStatus } from './DependencyUtils';
-import { Stage, TeamMember } from '@/api/entities';
+import { SupabaseStage } from '@/api/supabaseEntities';
 
 export default function CompactStageActions({ stage, allStages, onStageUpdate, teamMembers }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -76,7 +76,7 @@ export default function CompactStageActions({ stage, allStages, onStageUpdate, t
         });
       } else {
         // Direct status update
-        await Stage.update(stage.id, { status: newStatus });
+        await SupabaseStage.update(stage.id, { status: newStatus });
         toast({
           title: "Status Updated",
           description: `Stage status changed to ${newStatus.replace('_', ' ')}`,
@@ -96,14 +96,16 @@ export default function CompactStageActions({ stage, allStages, onStageUpdate, t
     }
   };
 
-  const handleAssigneeChange = async (email) => {
+  const handleAssigneeChange = async (memberId) => {
     try {
-      await Stage.update(stage.id, { assigned_to: email });
-      setSelectedAssignee(email);
+      // Pass team member ID instead of email
+      await SupabaseStage.update(stage.id, { assigned_to: memberId });
+      setSelectedAssignee(memberId);
       setIsEditingAssignee(false);
+      const member = teamMembers.find(m => m.id === memberId);
       toast({
         title: "Assignee Updated",
-        description: "Team member has been assigned to this stage",
+        description: member ? `Assigned to ${member.name}` : "Assignment removed",
         duration: 3000,
       });
       onStageUpdate && onStageUpdate();
@@ -163,7 +165,7 @@ export default function CompactStageActions({ stage, allStages, onStageUpdate, t
 
   const statusDisplay = getStatusDisplay();
   const StatusIcon = statusDisplay.icon;
-  const assignedMember = teamMembers.find(member => member.email === stage.assigned_to);
+  const assignedMember = teamMembers.find(member => member.id === stage.assigned_to);
   const isBlocked = stage.status === 'not_started' && dependencyStatus === 'blocked';
 
   return (
@@ -257,7 +259,7 @@ export default function CompactStageActions({ stage, allStages, onStageUpdate, t
                 <SelectContent>
                   <SelectItem value="">Unassigned</SelectItem>
                   {teamMembers.map(member => (
-                    <SelectItem key={member.email} value={member.email}>
+                    <SelectItem key={member.id} value={member.id}>
                       {member.name}
                     </SelectItem>
                   ))}

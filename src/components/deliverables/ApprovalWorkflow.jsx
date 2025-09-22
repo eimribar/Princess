@@ -28,12 +28,33 @@ export default function ApprovalWorkflow({
   version, 
   onApprove, 
   onDecline, 
-  onSubmitForApproval 
+  onSubmitForApproval,
+  quickMode = false 
 }) {
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
   const [approvalAction, setApprovalAction] = useState(null); // 'approve' or 'decline'
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [showQuickApprove, setShowQuickApprove] = useState(false);
+
+  // Feedback templates for common scenarios
+  const feedbackTemplates = [
+    { value: 'needs-refinement', label: 'Needs Refinement', text: 'Please refine the design elements to better align with our brand guidelines.' },
+    { value: 'missing-elements', label: 'Missing Elements', text: 'Some required elements are missing. Please review the requirements document.' },
+    { value: 'quality-issues', label: 'Quality Issues', text: 'The quality needs improvement. Please ensure high-resolution assets and proper formatting.' },
+    { value: 'brand-alignment', label: 'Brand Alignment', text: 'Please ensure better alignment with our brand voice and visual identity.' },
+    { value: 'technical-issues', label: 'Technical Issues', text: 'There are technical issues that need to be addressed before approval.' },
+    { value: 'custom', label: 'Custom Feedback', text: '' }
+  ];
+
+  const handleTemplateChange = (value) => {
+    setSelectedTemplate(value);
+    const template = feedbackTemplates.find(t => t.value === value);
+    if (template && template.text) {
+      setFeedback(template.text);
+    }
+  };
 
   const approvers = deliverable?.approval_required_from || [];
   const currentVersion = version || deliverable?.versions?.[deliverable.versions.length - 1];
@@ -68,7 +89,23 @@ export default function ApprovalWorkflow({
   };
 
   const handleApprovalAction = async (action) => {
-    if (!currentVersion || !feedback.trim()) {
+    // In quick mode, approve without feedback requirement
+    if (quickMode && action === 'approve' && !feedback.trim()) {
+      setIsSubmitting(true);
+      try {
+        if (onApprove) {
+          await onApprove(currentVersion?.id, 'Approved');
+        }
+        setShowQuickApprove(false);
+      } catch (error) {
+        console.error('Failed to process approval:', error);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (!currentVersion || (!feedback.trim() && action === 'decline')) {
       setShowFeedbackForm(true);
       setApprovalAction(action);
       return;
@@ -77,7 +114,7 @@ export default function ApprovalWorkflow({
     setIsSubmitting(true);
     try {
       if (action === 'approve' && onApprove) {
-        await onApprove(currentVersion.id, feedback);
+        await onApprove(currentVersion.id, feedback || 'Approved');
       } else if (action === 'decline' && onDecline) {
         await onDecline(currentVersion.id, feedback);
       }
@@ -86,6 +123,7 @@ export default function ApprovalWorkflow({
       setFeedback('');
       setShowFeedbackForm(false);
       setApprovalAction(null);
+      setSelectedTemplate('');
     } catch (error) {
       console.error('Failed to process approval:', error);
     } finally {
@@ -172,27 +210,55 @@ export default function ApprovalWorkflow({
               
               {/* Approval Actions */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
-                <Button
-                  onClick={() => {
-                    setApprovalAction('approve');
-                    setShowFeedbackForm(true);
-                  }}
-                  className="gap-2 bg-green-600 hover:bg-green-700"
-                >
-                  <ThumbsUp className="w-4 h-4" />
-                  Approve
-                </Button>
-                <Button
-                  onClick={() => {
-                    setApprovalAction('decline');
-                    setShowFeedbackForm(true);
-                  }}
-                  variant="outline"
-                  className="gap-2 border-red-200 text-red-700 hover:bg-red-50"
-                >
-                  <ThumbsDown className="w-4 h-4" />
-                  Request Changes
-                </Button>
+                {quickMode ? (
+                  // Quick approve mode with single click
+                  <>
+                    <Button
+                      onClick={() => handleApprovalAction('approve')}
+                      disabled={isSubmitting}
+                      className="gap-2 bg-green-600 hover:bg-green-700"
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                      {isSubmitting ? 'Processing...' : 'Quick Approve'}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setApprovalAction('decline');
+                        setShowFeedbackForm(true);
+                      }}
+                      variant="outline"
+                      className="gap-2 border-red-200 text-red-700 hover:bg-red-50"
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                      Request Changes
+                    </Button>
+                  </>
+                ) : (
+                  // Standard approval with feedback requirement
+                  <>
+                    <Button
+                      onClick={() => {
+                        setApprovalAction('approve');
+                        setShowFeedbackForm(true);
+                      }}
+                      className="gap-2 bg-green-600 hover:bg-green-700"
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                      Approve
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setApprovalAction('decline');
+                        setShowFeedbackForm(true);
+                      }}
+                      variant="outline"
+                      className="gap-2 border-red-200 text-red-700 hover:bg-red-50"
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                      Request Changes
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -265,6 +331,27 @@ export default function ApprovalWorkflow({
                 </CardHeader>
                 
                 <CardContent className="p-6 space-y-4">
+                  {/* Feedback Templates for decline */}
+                  {approvalAction === 'decline' && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">
+                        Quick Feedback Templates
+                      </label>
+                      <select
+                        value={selectedTemplate}
+                        onChange={(e) => handleTemplateChange(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      >
+                        <option value="">Select a template...</option>
+                        {feedbackTemplates.map(template => (
+                          <option key={template.value} value={template.value}>
+                            {template.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
                       {approvalAction === 'approve' 

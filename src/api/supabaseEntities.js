@@ -6,6 +6,7 @@
 import { supabase } from '@/lib/supabase';
 import dataStore from './dataStore';
 import dateService from '@/services/dateService';
+import AutomationService from '@/services/automationService';
 
 // Base Supabase Entity class with common functionality
 class SupabaseEntity {
@@ -330,8 +331,80 @@ class StageEntity extends SupabaseEntity {
     super('stages');
   }
   
+  async create(data) {
+    // Create the stage first
+    const stage = await super.create(data);
+    
+    // If stage is marked as deliverable, auto-create the deliverable
+    if (stage.is_deliverable) {
+      await this.createDeliverableForStage(stage);
+    }
+    
+    return stage;
+  }
+  
+  async update(id, updates) {
+    // Get the current stage to check if is_deliverable is changing
+    const currentStage = await this.get(id);
+    
+    // Remove the skip flag from updates if present
+    const { _skipDeliverableSync, ...cleanUpdates } = updates;
+    const result = await super.update(id, cleanUpdates);
+    
+    // If stage is newly marked as deliverable, create the deliverable
+    if (cleanUpdates.is_deliverable === true && !currentStage?.is_deliverable) {
+      await this.createDeliverableForStage(result);
+    }
+    
+    // If stage has a deliverable and status changed, sync the deliverable status
+    // Skip if explicitly told to (prevents infinite loop)
+    if (result.deliverable_id && cleanUpdates.status && !_skipDeliverableSync) {
+      await this.syncDeliverableStatus(result);
+    }
+    
+    return result;
+  }
+  
+  async createDeliverableForStage(stage) {
+    // Use AutomationService with retry logic
+    return AutomationService.createDeliverableForStage(stage);
+  }
+  
+  async syncDeliverableStatus(stage) {
+    // Check if deliverable_id field exists and has a value
+    if (!stage.deliverable_id) {
+      console.log('Stage does not have deliverable_id or no deliverable linked');
+      return;
+    }
+    
+    const deliverableEntity = new DeliverableEntity();
+    const deliverable = await deliverableEntity.get(stage.deliverable_id);
+    if (!deliverable) {
+      console.warn(`Deliverable ${stage.deliverable_id} not found for stage ${stage.id}`);
+      return;
+    }
+    
+    // Use AutomationService for syncing with retry logic
+    return AutomationService.syncStageDeliverableStatus(stage, deliverable);
+  }
+  
+  determineDeliverableType(category) {
+    switch(category) {
+      case 'research':
+        return 'research';
+      case 'strategy':
+        return 'strategy';
+      case 'brand_building':
+      case 'brand_collaterals':
+      case 'brand_activation':
+        return 'creative';
+      default:
+        return 'document';
+    }
+  }
+  
   async createWithDependencies(stageData, dependencies = []) {
-    // First create the stage
+    // First create the stage (which will auto-create deliverable if needed)
     const stage = await this.create(stageData);
     
     // Then create dependencies if Supabase is available
@@ -432,6 +505,29 @@ class DeliverableEntity extends SupabaseEntity {
   constructor() {
     super('deliverables');
   }
+  
+  async update(id, updates) {
+    // Get current deliverable to check status changes
+    const currentDeliverable = await this.get(id);
+    const result = await super.update(id, updates);
+    
+    // If deliverable was approved, use AutomationService to handle it
+    if (updates.status === 'approved' && currentDeliverable?.status !== 'approved') {
+      await AutomationService.handleDeliverableApproval(result);
+    }
+    
+    // If deliverable was declined, use AutomationService to handle it
+    if (updates.status === 'declined' && currentDeliverable?.status !== 'declined') {
+      // Pass feedback and declined_by safely - these fields might not exist yet
+      const feedback = updates.feedback || '';
+      const declinedBy = updates.declined_by || updates.declined_by_user || 'System';
+      await AutomationService.handleDeliverableDecline(result, feedback, declinedBy);
+    }
+    
+    return result;
+  }
+  
+  // Method removed - now handled by AutomationService.handleDeliverableApproval
   
   async createWithVersion(deliverableData, initialVersion = null) {
     const deliverable = await this.create(deliverableData);

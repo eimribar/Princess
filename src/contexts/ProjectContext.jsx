@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { SupabaseStage, SupabaseDeliverable, SupabaseTeamMember, SupabaseProject } from '@/api/supabaseEntities';
 import dependencyEngine from '@/services/dependencyEngine';
+import dependencyWatcher from '@/services/dependencyWatcher';
 import { toast } from 'sonner';
 import { addDays, parseISO, format } from 'date-fns';
 
@@ -44,6 +45,71 @@ export function ProjectProvider({ children }) {
   // WebSocket simulation for real-time sync
   const syncChannel = useRef(null);
 
+  // Initialize dependency watcher
+  useEffect(() => {
+    if (currentProjectId) {
+      // Start watching dependencies
+      dependencyWatcher.startWatching(currentProjectId, 3000); // Check every 3 seconds
+      
+      // Subscribe to dependency watcher events
+      const unsubscribe = dependencyWatcher.subscribe((event) => {
+        if (event.type === 'status_auto_updated') {
+          // Update local state
+          setStages(prev => prev.map(s => 
+            s.id === event.stage.id 
+              ? { ...s, status: event.newStatus }
+              : s
+          ));
+          
+          // Show toast notification
+          toast.info(`${event.stage.name} ${event.reason.toLowerCase()}`);
+        } else if (event.type === 'stage_unblocked') {
+          // Update local state
+          setStages(prev => prev.map(s => 
+            s.id === event.stage.id 
+              ? { ...s, status: 'not_started' }
+              : s
+          ));
+          
+          // Show success toast
+          toast.success(`${event.stage.name} is now ready to start!`);
+        } else if (event.type === 'pre_assigned_stage_ready') {
+          // Special handling for pre-assigned stages becoming ready
+          setStages(prev => prev.map(s => 
+            s.id === event.stage.id 
+              ? { ...s, status: 'not_started' }
+              : s
+          ));
+          
+          // Show priority notification for pre-assigned stage
+          const assigneeName = event.assignedTo?.name || 'Team member';
+          toast.success(
+            `🎯 Pre-assigned stage "${event.stage.name}" is now ready! ${assigneeName} has been notified.`,
+            { duration: 5000 }
+          );
+        } else if (event.type === 'urgent_notification') {
+          // Handle urgent notifications for pre-assignments
+          toast.warning(
+            event.title,
+            { 
+              description: event.message,
+              duration: 10000,
+              action: {
+                label: 'View Stage',
+                onClick: () => setSelectedStage(event.stage)
+              }
+            }
+          );
+        }
+      });
+      
+      return () => {
+        dependencyWatcher.stopWatching();
+        unsubscribe();
+      };
+    }
+  }, [currentProjectId]);
+  
   // Initialize data on mount
   useEffect(() => {
     // Get project ID from URL or localStorage
@@ -329,6 +395,35 @@ export function ProjectProvider({ children }) {
     subscribers.current.forEach(callback => {
       callback(event, data);
     });
+  };
+
+  /**
+   * Quick update for stage status/assignment without full reload - optimistic UI
+   */
+  const updateStageOptimistic = async (stageId, updates) => {
+    try {
+      // Update local state immediately for smooth UX
+      setStages(prev => prev.map(s => 
+        s.id === stageId ? { ...s, ...updates } : s
+      ));
+      
+      // Persist to backend in background
+      await SupabaseStage.update(stageId, updates);
+      
+      // Broadcast to other tabs
+      broadcastChange('stage_update', { id: stageId, updates });
+      
+      return true;
+    } catch (error) {
+      // Revert on error
+      const originalStage = await SupabaseStage.get(stageId);
+      setStages(prev => prev.map(s => 
+        s.id === stageId ? originalStage : s
+      ));
+      
+      toast.error('Failed to update stage');
+      return false;
+    }
   };
 
   /**
@@ -797,6 +892,7 @@ export function ProjectProvider({ children }) {
     
     // Update functions
     updateStage,
+    updateStageOptimistic,
     updateDeliverable,
     batchUpdateStages,
     applyPendingChanges,
@@ -837,6 +933,7 @@ export function ProjectProvider({ children }) {
     pendingChanges,
     isValidating,
     updateStage,
+    updateStageOptimistic,
     updateDeliverable,
     batchUpdateStages,
     applyPendingChanges,

@@ -39,6 +39,7 @@ export default function Dashboard() {
     teamMembers: contextTeamMembers,
     isLoading: contextLoading,
     updateStage: globalUpdateStage,
+    updateStageOptimistic,
     reloadData: reloadProjectData,
     switchProject
   } = useProject();
@@ -244,15 +245,20 @@ export default function Dashboard() {
   };
 
   const handleStageUpdate = async (stageId, updates) => {
-    // Use global update from context for synchronization
+    // Use optimistic update for smooth UX without page jumps
     if (stageId && updates) {
-      await globalUpdateStage(stageId, updates);
+      // Use optimistic update for immediate UI response
+      await updateStageOptimistic(stageId, updates);
+      
+      // Only reload comments if status changed (might have system comments)
+      if (updates.status) {
+        await loadComments();
+      }
     } else {
       // Fallback to reload if no specific update
       await reloadProjectData();
+      await loadComments();
     }
-    // Reload comments
-    await loadComments();
   };
 
   const handleOpenOutOfScopeForm = () => {
@@ -340,6 +346,7 @@ export default function Dashboard() {
                 onStageClick={handleStageClick} 
                 selectedStageId={selectedStageId}
                 teamMembers={teamMembers}
+                deliverables={deliverables}
               />
             ) : (
               <div>No stages available to display</div>
@@ -366,6 +373,7 @@ export default function Dashboard() {
                 isExpanded={isSidebarExpanded}
                 onToggleExpand={() => setIsSidebarExpanded(!isSidebarExpanded)}
                 readOnly={isClient}
+                deliverables={deliverables}
           />
         ) : (
           <div className="p-6 space-y-6">

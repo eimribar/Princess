@@ -8,6 +8,12 @@ import ErrorBoundary from '@/components/ErrorBoundary'
 
 // Clear any demo data on startup
 import { clearAllPrincessData } from '@/utils/clearAllData';
+// Import fix utility for missing deliverables
+import { fixMissingDeliverables } from '@/utils/fixMissingDeliverables';
+// Import diagnostic utility
+import { diagnoseStage } from '@/utils/diagnoseStage';
+// Import sync utility
+import { syncStageDeliverables } from '@/utils/syncStageDeliverables';
 
 // Check and clear demo data if it exists
 const checkAndClearDemoData = () => {

@@ -740,7 +740,172 @@ const navigationItems = allItems.filter(item =>
 
 ---
 
-*Last updated: December 6, 2024 - Evening*
-*Version: 5.0.0 - Unified Portal Architecture*
+## 🔄 Project Isolation & Multi-Tenant Architecture (December 22, 2024)
+
+### Architecture Overview
+Princess now supports full multi-tenant project isolation, allowing multiple projects to coexist in the same database with complete data separation.
+
+### Key Components
+
+#### 1. ProjectContext (`/src/contexts/ProjectContext.jsx`)
+- **Central state management** for current project
+- **Automatic data filtering** by project_id
+- **Cross-tab synchronization** using BroadcastChannel API
+- **Dependency validation** and cascade updates
+- **URL-based routing** (`/dashboard/${projectId}`)
+
+```javascript
+// Core isolation logic
+const [projectData, stagesData, deliverablesData, teamData] = await Promise.all([
+  SupabaseProject.get(projectId),
+  SupabaseStage.filter({ project_id: projectId }),
+  SupabaseDeliverable.filter({ project_id: projectId }),
+  SupabaseTeamMember.filter({ project_id: projectId })
+]);
+```
+
+#### 2. Stage-Deliverable Relationship
+**Important Business Logic**: Deliverable stages display color based on their **deliverable status**, not stage status.
+- Stage status: Controls workflow state
+- Deliverable status: Controls visual representation
+- This allows independent tracking of stage progress vs. deliverable approval
+
+#### 3. Utility Functions Created
+
+##### `/src/utils/fixMissingDeliverables.js`
+- Creates missing deliverables for stages marked as `is_deliverable`
+- Maps stage status to appropriate deliverable status
+- Links deliverables to their parent stages
+
+##### `/src/utils/syncStageDeliverables.js`
+- Syncs deliverable status with stage status
+- Batch updates for performance
+- Status mapping:
+  - `completed` stage → `approved` deliverable
+  - `in_progress` stage → `wip` deliverable  
+  - `blocked`/`not_ready` stage → `draft` deliverable
+
+##### `/src/utils/diagnoseStage.js`
+- Diagnostic tool for troubleshooting stage display issues
+- Checks stage-deliverable relationships
+- Identifies missing or mismatched deliverable_id references
+
+### Recent Fixes (December 22, 2024)
+
+#### 1. Fixed Deliverables Page Access
+- **Issue**: "useUser must be used within a UserProvider" error
+- **Fix**: Updated imports from old UserContext to SupabaseUserContext
+- **Files**: `Deliverables.jsx`, `ClientApprovalDashboard.jsx`
+
+#### 2. Fixed Dashboard Sidebar Behavior
+- **Issue**: Deliverable stages redirecting to detail page instead of opening sidebar
+- **Fix**: Simplified click handler to always open sidebar for consistency
+- **File**: `VisualTimeline.jsx`
+
+#### 3. Fixed Stage Status Sync
+- **Issue**: `_skipStageSync` column not found in database
+- **Fix**: Removed the flag from update calls in:
+  - `syncStageDeliverables.js`
+  - `fixMissingDeliverables.js`
+  - `automationService.js`
+
+### Database Statistics
+- **Projects**: 2 (correctly isolated)
+- **Deliverables**: 116 total (58 per project - correct count)
+- **Stages**: Properly filtered by project_id
+
+### 🚨 Outstanding Issues (To Fix Tomorrow)
+
+#### Stage Color Display Issue
+**Problem**: Stages 2 and 10 remain white despite status changes
+**Root Cause**: These stages likely have deliverables with mismatched status
+**Next Steps**:
+1. Run `await window.diagnoseStage(2)` to check deliverable status
+2. Run `await window.diagnoseStage(10)` to check deliverable status
+3. Verify deliverable_id linkage is correct
+4. Check if deliverable status is properly synced
+
+#### Potential Solutions to Try:
+1. **Manual status update**: Update deliverable status directly in database
+2. **Force sync**: Create targeted sync for specific stages
+3. **Check data integrity**: Verify stage.deliverable_id matches deliverable.id
+4. **Review status mapping**: Ensure status conversion logic is correct
+
+### Project Isolation Implementation Details
+
+#### URL Routing Structure
+```javascript
+// Project-specific routes
+/dashboard/{projectId}         // Main dashboard
+/dashboard/{projectId}/stage/{stageId}  // Stage details
+/deliverables                  // Uses current project from context
+/team                         // Filtered by current project
+```
+
+#### Data Filtering Pattern
+All entities are filtered by project_id:
+```javascript
+// Standard filtering pattern used throughout
+await SupabaseEntity.filter({ project_id: currentProjectId })
+```
+
+#### Cross-Tab Synchronization
+```javascript
+// BroadcastChannel for real-time updates
+const channel = new BroadcastChannel('project-sync');
+channel.postMessage({ type: 'PROJECT_CHANGED', projectId });
+```
+
+### Testing Commands Available in Browser Console
+
+```javascript
+// Diagnostic tools
+await window.diagnoseStage(stageNumber)        // Check stage-deliverable relationship
+await window.fixMissingDeliverables()          // Create missing deliverables
+await window.syncStageDeliverables()           // Sync all deliverable statuses
+await window.syncStageDeliverables(stageNumber) // Sync specific stage
+
+// Check project isolation
+const stages = await SupabaseStage.list()
+console.log(stages.map(s => ({ 
+  id: s.id, 
+  project_id: s.project_id, 
+  name: s.name 
+})))
+```
+
+### Architecture Strengths
+1. **Complete project isolation** - No data leakage between projects
+2. **Scalable design** - Can handle unlimited projects
+3. **Real-time synchronization** - Changes reflect across tabs
+4. **Diagnostic tools** - Built-in troubleshooting utilities
+5. **Flexible status management** - Independent stage/deliverable tracking
+
+### To-Do List for Tomorrow
+
+1. **Fix Stage 2 & 10 White Color Issue**
+   - [ ] Diagnose exact deliverable status
+   - [ ] Fix status mismatch
+   - [ ] Verify visual update
+
+2. **Complete Status Sync System**
+   - [ ] Ensure all automation hooks work without errors
+   - [ ] Test cascade updates thoroughly
+   - [ ] Verify dependency watcher integration
+
+3. **Data Integrity Check**
+   - [ ] Verify all stage.deliverable_id references are valid
+   - [ ] Check for orphaned deliverables
+   - [ ] Ensure project_id consistency
+
+4. **Performance Optimization**
+   - [ ] Review and optimize filter queries
+   - [ ] Consider caching for frequently accessed data
+   - [ ] Minimize re-renders on status changes
+
+---
+
+*Last updated: December 22, 2024*
+*Version: 5.1.0 - Multi-Tenant Project Isolation*
 
 This document should be updated as the project evolves. Always maintain these guidelines when implementing new features.

@@ -70,7 +70,8 @@ export default function StageSidebarV2({
   onStageUpdate, 
   teamMembers,
   isExpanded,
-  onToggleExpand 
+  onToggleExpand,
+  deliverables = []
 }) {
   const [newComment, setNewComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -118,7 +119,7 @@ export default function StageSidebarV2({
     const originalStatus = stage.status;
 
     try {
-      await Stage.update(stage.id, { status: newStatus });
+      await SupabaseStage.update(stage.id, { status: newStatus });
       await onAddComment(`Status changed to: ${newStatus.replace('_', ' ').toUpperCase()}`);
       setUpdateMessage({ type: 'success', text: `Status updated to ${newStatus.replace('_', ' ')}` });
 
@@ -128,13 +129,17 @@ export default function StageSidebarV2({
 
         if (stagesToReset.length > 0) {
           for (const descendant of stagesToReset) {
-            await Stage.update(descendant.id, { status: 'not_started' });
-            await Comment.create({
+            await SupabaseStage.update(descendant.id, { status: 'not_started' });
+            await SupabaseComment.create({
               project_id: descendant.project_id,
               stage_id: descendant.id,
+              comment_text: `Status automatically reset because dependency "${stage.name}" was un-completed.`,
               content: `Status automatically reset because dependency "${stage.name}" was un-completed.`,
-              author_name: "System",
-              author_email: "system@deutschco.com",
+              author_name: 'System',
+              author_email: 'system@princess.app',
+              user_id: null, // System comment
+              is_internal: false,
+              created_date: new Date().toISOString()
             });
           }
         }
@@ -163,7 +168,7 @@ export default function StageSidebarV2({
 
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
   const deadlineDate = stage.deadline ? new Date(stage.deadline) : null;
-  const assignedMember = teamMembers.find(member => member.email === stage.assigned_to);
+  const assignedMember = teamMembers.find(member => member.id === stage.assigned_to);
 
   // Get blocked dependencies
   const blockedDependencies = isLocked ? 
@@ -261,9 +266,80 @@ export default function StageSidebarV2({
           allStages={stages}
           onStageUpdate={onStageUpdate}
           teamMembers={teamMembers}
-          isReadOnly={isLocked}
+          isReadOnly={!onStageUpdate}
         />
       </div>
+
+      {/* Deliverable Section - Show if stage is a deliverable */}
+      {stage.is_deliverable && (() => {
+        const associatedDeliverable = deliverables?.find(d => 
+          d.id === stage.deliverable_id || d.stage_id === stage.id
+        );
+        
+        if (!associatedDeliverable) {
+          return (
+            <div className="p-4 border-b border-gray-200 bg-amber-50">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-amber-900">Deliverable Not Created</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    A deliverable will be automatically created when you start working on this stage.
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        
+        return (
+          <div className="p-4 border-b border-gray-200 bg-indigo-50">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-indigo-600" />
+                  <span className="text-sm font-medium text-indigo-900">Deliverable Status</span>
+                </div>
+                <Badge variant="outline" className={`text-xs font-medium ${
+                  associatedDeliverable.status === 'approved' ? 'bg-green-50 text-green-700 border-green-300' :
+                  associatedDeliverable.status === 'pending_approval' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                  associatedDeliverable.status === 'declined' ? 'bg-red-50 text-red-700 border-red-300' :
+                  associatedDeliverable.status === 'wip' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                  'bg-gray-50 text-gray-700 border-gray-300'
+                }`}>
+                  {associatedDeliverable.status.replace('_', ' ').toUpperCase()}
+                </Badge>
+              </div>
+              
+              {associatedDeliverable.current_iteration > 0 && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Iteration</span>
+                  <span className="font-medium">
+                    {associatedDeliverable.current_iteration} of {associatedDeliverable.max_iterations || 3}
+                  </span>
+                </div>
+              )}
+              
+              {associatedDeliverable.versions?.length > 0 && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">Versions</span>
+                  <span className="font-medium">{associatedDeliverable.versions.length}</span>
+                </div>
+              )}
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full mt-2"
+                onClick={() => window.location.href = `/deliverables/${associatedDeliverable.id}`}
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                View Deliverable Details
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Simplified Tabs - Only 2 */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">

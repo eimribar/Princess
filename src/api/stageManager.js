@@ -9,7 +9,12 @@ import {
   getCriticalPath, 
   validateDependencyChain,
   CRITICAL_DEPENDENCIES,
-  MASTER_UNLOCKS
+  MASTER_UNLOCKS,
+  evaluateCascadeImpact,
+  cascadeBlockDependents,
+  canTransitionToStatus,
+  autoUpdateStageStatuses,
+  getAllDependentStages
 } from '../components/dashboard/DependencyUtils';
 
 class StageManager {
@@ -79,7 +84,9 @@ class StageManager {
       }
     });
 
-    return Math.round((completedWeight / totalWeight) * 100);
+    // Calculate percentage and ensure it's within 0-100 range
+    const percentage = totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
+    return Math.max(0, Math.min(100, Math.round(percentage)));
   }
 
   // Get stages that are ready to start (all dependencies met)
@@ -149,8 +156,10 @@ class StageManager {
       }
       const stages = await this.getAllStages(stage.project_id);
       
-      if (!stage) {
-        throw new Error(`Stage ${stageId} not found`);
+      // Validate transition
+      const validation = canTransitionToStatus(stage, 'completed', stages);
+      if (!validation.allowed) {
+        throw new Error(validation.reason);
       }
 
       // Validate stage can be completed
@@ -162,33 +171,50 @@ class StageManager {
 
       // Update stage status
       await Stage.update(stageId, { 
-        status: 'completed',
-        completed_date: new Date().toISOString(),
-        completed_by: completedBy
+        status: 'completed'
       });
 
       // Log completion
       await Comment.create({
         stage_id: stageId,
         project_id: stage.project_id,
+        comment_text: `✅ Stage completed by ${completedBy}`,
         content: `✅ Stage completed by ${completedBy}`,
-        author_name: completedBy,
-        author_email: 'system@agency.com',
-        log_type: 'status_update'
+        author_name: 'System',
+        author_email: 'system@princess.app',
+        user_id: null, // System comment - no specific user
+        is_internal: false,
+        created_date: new Date().toISOString()
       });
 
       // Update dependent stages
       const updatedStages = await this.updateDependentStages(stageId);
+      
+      // Reload stages to get fresh data after the update
+      const freshStages = await this.getAllStages(stage.project_id);
+      
+      // Auto-update any stages that should be unblocked using fresh data
+      const autoUpdates = await autoUpdateStageStatuses(freshStages, async (sid, updates) => {
+        await Stage.update(sid, updates);
+      });
 
       // Calculate new progress
       const newProgress = await this.calculateRealProgress(stage.project_id);
       
-      // Update project progress
+      // Update project progress with validation
       if (stage.project_id) {
-        await Project.update(stage.project_id, { 
-          progress_percentage: newProgress,
-          updated_date: new Date().toISOString()
-        });
+        // Ensure progress is within valid range (0-100)
+        const validProgress = Math.max(0, Math.min(100, newProgress));
+        
+        try {
+          await Project.update(stage.project_id, { 
+            progress_percentage: validProgress,
+            updated_at: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error('Failed to update project progress:', error);
+          // Don't throw - progress update is non-critical
+        }
       }
 
       // Notify listeners
@@ -231,25 +257,28 @@ class StageManager {
         throw new Error('Cannot start stage: dependencies not met');
       }
 
-      if (stage.status !== 'not_started') {
+      if (stage.status !== 'not_started' && stage.status !== 'not_ready') {
         throw new Error(`Stage is already ${stage.status}`);
       }
 
       // Update stage status
       await Stage.update(stageId, { 
         status: 'in_progress',
-        started_date: new Date().toISOString(),
-        assigned_to: assignedTo
+        start_date: new Date().toISOString()
+        // Don't change assigned_to here - it should be a UUID, not 'Current User' string
       });
 
       // Log start
       await Comment.create({
         stage_id: stageId,
         project_id: stage.project_id,
+        comment_text: `🚀 Stage started by ${assignedTo}`,
         content: `🚀 Stage started by ${assignedTo}`,
-        author_name: assignedTo,
-        author_email: 'system@agency.com',
-        log_type: 'status_update'
+        author_name: 'System',
+        author_email: 'system@princess.app',
+        user_id: null, // System comment
+        is_internal: false,
+        created_date: new Date().toISOString()
       });
 
       // Notify listeners
@@ -276,20 +305,30 @@ class StageManager {
 
     for (const stage of stages) {
       if (stage.dependencies && stage.dependencies.includes(completedStageId)) {
-        const newStatus = getDependencyStatus(stage, stages);
+        // Create a copy of stages with the completed stage marked as completed
+        const updatedStagesArray = stages.map(s => 
+          s.id === completedStageId ? { ...s, status: 'completed' } : s
+        );
+        const newStatus = getDependencyStatus(stage, updatedStagesArray);
         
-        // If stage becomes ready and was not_started, it's now available
-        if (newStatus === 'ready' && stage.status === 'not_started') {
+        // If stage becomes ready and was blocked or not_started, update it
+        if (newStatus === 'ready' && (stage.status === 'not_started' || stage.status === 'blocked')) {
+          // Update the stage status to not_started (unblocked)
+          await Stage.update(stage.id, { status: 'not_started' });
+          
           await Comment.create({
             stage_id: stage.id,
             project_id: stage.project_id,
+            comment_text: `🔓 Stage is now ready to start (dependencies completed)`,
             content: `🔓 Stage is now ready to start (dependencies completed)`,
             author_name: 'System',
-            author_email: 'system@agency.com',
-            log_type: 'dependency_update'
+            author_email: 'system@princess.app',
+            user_id: null, // System comment
+            is_internal: false,
+            created_date: new Date().toISOString()
           });
           
-          updatedStages.push(stage);
+          updatedStages.push({ ...stage, status: 'not_started' });
         }
       }
     }
@@ -304,6 +343,142 @@ class StageManager {
     return stage.dependencies
       .map(depId => allStages.find(s => s.id === depId))
       .filter(dep => dep && dep.status !== 'completed');
+  }
+
+  // Comprehensive status change handler with validation and cascade
+  async changeStageStatus(stageId, newStatus, options = {}) {
+    const { 
+      skipValidation = false, 
+      skipCascade = false, 
+      forceChange = false,
+      changedBy = 'Current User',
+      reason = null 
+    } = options;
+    
+    try {
+      // Get stage and all stages for dependency checking
+      const stage = await Stage.get(stageId);
+      if (!stage) {
+        throw new Error(`Stage ${stageId} not found`);
+      }
+      
+      const stages = await this.getAllStages(stage.project_id);
+      const oldStatus = stage.status;
+      
+      // Skip if no change
+      if (oldStatus === newStatus) {
+        return { stage, changed: false };
+      }
+      
+      // Validate transition unless skipped
+      if (!skipValidation && !forceChange) {
+        const validation = canTransitionToStatus(stage, newStatus, stages);
+        if (!validation.allowed) {
+          throw new Error(validation.reason);
+        }
+      }
+      
+      // Evaluate cascade impact
+      const impact = evaluateCascadeImpact(stageId, newStatus, stages);
+      
+      // If there are conflicts and not forcing, return for confirmation
+      if (!forceChange && impact.requiresConfirmation) {
+        return {
+          requiresConfirmation: true,
+          impact,
+          stage,
+          newStatus,
+          message: 'This change will affect other stages'
+        };
+      }
+      
+      // Handle specific status transitions
+      switch (newStatus) {
+        case 'completed':
+          return await this.completeStage(stageId, changedBy);
+          
+        case 'in_progress':
+          return await this.startStage(stageId, changedBy);
+          
+        case 'not_started':
+        case 'not_ready':
+          return await this.resetStage(stageId, reason || `Changed to ${newStatus} by ${changedBy}`, skipCascade);
+          
+        case 'blocked':
+          // Update to blocked status
+          await Stage.update(stageId, { status: 'blocked' });
+          
+          // Log blocking
+          await Comment.create({
+            stage_id: stageId,
+            project_id: stage.project_id,
+            comment_text: `🚫 Stage blocked: ${reason || 'Dependencies not met'}`,
+            content: `🚫 Stage blocked: ${reason || 'Dependencies not met'}`,
+            author_name: 'System',
+            author_email: 'system@princess.app',
+            user_id: null,
+            is_internal: false,
+            created_date: new Date().toISOString()
+          });
+          
+          // Apply cascade if needed
+          if (!skipCascade) {
+            await cascadeBlockDependents(stageId, stages, async (sid, updates) => {
+              await Stage.update(sid, updates);
+            });
+          }
+          
+          break;
+          
+        default:
+          // Generic status update
+          await Stage.update(stageId, { status: newStatus });
+      }
+      
+      // Auto-update stage statuses across the board
+      if (!skipCascade) {
+        await autoUpdateStageStatuses(stages, async (sid, updates) => {
+          await Stage.update(sid, updates);
+        });
+      }
+      
+      // Recalculate progress
+      const newProgress = await this.calculateRealProgress(stage.project_id);
+      
+      // Update project progress
+      if (stage.project_id) {
+        const validProgress = Math.max(0, Math.min(100, newProgress));
+        try {
+          await Project.update(stage.project_id, { 
+            progress_percentage: validProgress,
+            updated_at: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error('Failed to update project progress:', error);
+        }
+      }
+      
+      // Notify listeners
+      this.notifyListeners({
+        type: 'stage_status_changed',
+        stage,
+        oldStatus,
+        newStatus,
+        impact,
+        newProgress
+      });
+      
+      return {
+        stage: { ...stage, status: newStatus },
+        changed: true,
+        impact,
+        newProgress
+      };
+      
+    } catch (error) {
+      console.error('Failed to change stage status:', error);
+      throw error;
+    }
   }
 
   // Validate entire project workflow integrity
@@ -352,48 +527,99 @@ class StageManager {
   }
 
   // Reset a stage back to not_started (rollback)
-  async resetStage(stageId, reason = 'Manual reset') {
+  async resetStage(stageId, reason = 'Manual reset', skipCascade = false) {
     try {
       const stage = await Stage.get(stageId);
       if (!stage) {
         throw new Error(`Stage ${stageId} not found`);
       }
+      
+      const stages = await this.getAllStages(stage.project_id);
+      
+      // Evaluate cascade impact
+      const impact = evaluateCascadeImpact(stageId, 'not_started', stages);
+      
+      // If there are conflicts or warnings and cascade is not skipped, return impact for confirmation
+      if (!skipCascade && (impact.conflicts.length > 0 || impact.warnings.length > 0)) {
+        return {
+          requiresConfirmation: true,
+          impact,
+          message: 'This change will affect dependent stages'
+        };
+      }
 
       // Update stage status
       await Stage.update(stageId, { 
         status: 'not_started',
-        started_date: null,
-        completed_date: null,
-        completed_by: null
+        start_date: null,
       });
+      
+      // Apply cascade blocking if not skipped
+      if (!skipCascade) {
+        const cascadeUpdates = await cascadeBlockDependents(stageId, stages, async (sid, updates) => {
+          await Stage.update(sid, updates);
+          
+          // Log blocking
+          const blockedStage = stages.find(s => s.id === sid);
+          if (blockedStage) {
+            await Comment.create({
+              stage_id: sid,
+              project_id: stage.project_id,
+              comment_text: `🚫 Stage blocked: dependency ${stage.name} was reset`,
+              content: `🚫 Stage blocked: dependency ${stage.name} was reset`,
+              author_name: 'System',
+              author_email: 'system@princess.app',
+              user_id: null,
+              is_internal: false,
+              created_date: new Date().toISOString()
+            });
+          }
+        });
+      }
 
       // Log reset
       await Comment.create({
         stage_id: stageId,
         project_id: stage.project_id,
+        comment_text: `🔄 Stage reset to not started. Reason: ${reason}`,
         content: `🔄 Stage reset to not started. Reason: ${reason}`,
         author_name: 'System',
-        author_email: 'system@agency.com',
-        log_type: 'status_update'
+        author_email: 'system@princess.app',
+        user_id: null, // System comment
+        is_internal: false,
+        created_date: new Date().toISOString()
       });
 
       // Recalculate progress
       const newProgress = await this.calculateRealProgress(stage.project_id);
       if (stage.project_id) {
-        await Project.update(stage.project_id, { 
-          progress_percentage: newProgress,
-          updated_date: new Date().toISOString()
-        });
+        // Ensure progress is within valid range (0-100)
+        const validProgress = Math.max(0, Math.min(100, newProgress));
+        
+        try {
+          await Project.update(stage.project_id, { 
+            progress_percentage: validProgress,
+            updated_at: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error('Failed to update project progress:', error);
+          // Don't throw - progress update is non-critical
+        }
       }
 
-      // Notify listeners
+      // Notify listeners with cascade information
       this.notifyListeners({
         type: 'stage_reset',
         stage,
-        newProgress
+        newProgress,
+        cascadeImpact: impact
       });
 
-      return stage;
+      return {
+        stage,
+        impact,
+        newProgress
+      };
 
     } catch (error) {
       console.error('Failed to reset stage:', error);

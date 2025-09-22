@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { SupabaseDeliverable, SupabaseStage } from "@/api/supabaseEntities";
 import { useProject } from '@/contexts/ProjectContext';
+import { useUser } from '@/contexts/SupabaseUserContext';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,19 +21,29 @@ import {
   Filter,
   ArrowRight,
   GitCommit,
-  Upload
+  Upload,
+  CheckSquare,
+  Square,
+  ThumbsUp,
+  ThumbsDown
 } from "lucide-react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import ClientApprovalDashboard from "@/components/client/ClientApprovalDashboard";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function Deliverables() {
   const { currentProjectId, stages: projectStages } = useProject();
+  const { user } = useUser();
+  const { toast } = useToast();
   const [deliverables, setDeliverables] = useState([]);
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -70,6 +81,132 @@ export default function Deliverables() {
       console.error("Error loading deliverables:", error);
     }
     setIsLoading(false);
+  };
+
+  // Batch operation handlers
+  const handleBatchApprove = async () => {
+    if (selectedItems.size === 0) return;
+    
+    try {
+      const promises = Array.from(selectedItems).map(id => 
+        SupabaseDeliverable.update(id, { 
+          status: 'approved',
+          approved_at: new Date().toISOString()
+        })
+      );
+      
+      await Promise.all(promises);
+      
+      toast({
+        title: "Batch Approval Successful",
+        description: `${selectedItems.size} deliverables approved`,
+        variant: "success"
+      });
+      
+      setSelectedItems(new Set());
+      setIsSelectionMode(false);
+      await loadDeliverables();
+    } catch (error) {
+      toast({
+        title: "Batch Approval Failed",
+        description: "Some items could not be approved",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleBatchDecline = async (feedback) => {
+    if (selectedItems.size === 0) return;
+    
+    try {
+      const promises = Array.from(selectedItems).map(id => 
+        SupabaseDeliverable.update(id, { 
+          status: 'declined',
+          feedback: feedback || 'Changes requested',
+          declined_at: new Date().toISOString()
+        })
+      );
+      
+      await Promise.all(promises);
+      
+      toast({
+        title: "Changes Requested",
+        description: `Feedback sent for ${selectedItems.size} deliverables`,
+        variant: "default"
+      });
+      
+      setSelectedItems(new Set());
+      setIsSelectionMode(false);
+      await loadDeliverables();
+    } catch (error) {
+      toast({
+        title: "Operation Failed",
+        description: "Could not process the request",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleQuickApprove = async (deliverableId) => {
+    try {
+      await SupabaseDeliverable.update(deliverableId, {
+        status: 'approved',
+        approved_at: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Deliverable Approved",
+        description: "The deliverable has been approved successfully"
+      });
+      
+      await loadDeliverables();
+    } catch (error) {
+      toast({
+        title: "Approval Failed",
+        description: "Could not approve the deliverable",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleQuickDecline = async (deliverableId) => {
+    try {
+      await SupabaseDeliverable.update(deliverableId, {
+        status: 'declined',
+        declined_at: new Date().toISOString()
+      });
+      
+      toast({
+        title: "Changes Requested",
+        description: "Feedback request sent to the team"
+      });
+      
+      await loadDeliverables();
+    } catch (error) {
+      toast({
+        title: "Operation Failed",
+        description: "Could not process the request",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const toggleSelection = (deliverableId) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(deliverableId)) {
+      newSelected.delete(deliverableId);
+    } else {
+      newSelected.add(deliverableId);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedItems.size === filteredDeliverables.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(filteredDeliverables.map(d => d.id)));
+    }
   };
   
   const getStatusColor = (status) => {
@@ -192,21 +329,103 @@ export default function Deliverables() {
     );
   }
 
+  // Show client dashboard for client users
+  if (user?.role === 'client' && user?.preferences?.showQuickActions) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <ClientApprovalDashboard
+            deliverables={deliverables}
+            onApprove={handleQuickApprove}
+            onDecline={handleQuickDecline}
+            onBulkAction={async (action, ids) => {
+              if (action === 'approve') {
+                setSelectedItems(new Set(ids));
+                await handleBatchApprove();
+              } else if (action === 'decline') {
+                setSelectedItems(new Set(ids));
+                await handleBatchDecline('Changes requested via bulk action');
+              }
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
+        {/* Header with Batch Actions */}
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Project Deliverables</h1>
             <p className="text-gray-600 mt-1">Chronological timeline of all project deliverables</p>
           </div>
           
-          <Button className="gap-2">
-            <Plus className="w-4 h-4" />
-            New Deliverable
-          </Button>
+          <div className="flex items-center gap-2">
+            {user?.permissions?.canBatchApprove && (
+              <Button
+                variant={isSelectionMode ? "secondary" : "outline"}
+                className="gap-2"
+                onClick={() => {
+                  setIsSelectionMode(!isSelectionMode);
+                  setSelectedItems(new Set());
+                }}
+              >
+                {isSelectionMode ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                {isSelectionMode ? 'Exit Selection' : 'Select Mode'}
+              </Button>
+            )}
+            
+            <Button className="gap-2">
+              <Plus className="w-4 h-4" />
+              New Deliverable
+            </Button>
+          </div>
         </div>
+
+        {/* Batch Actions Toolbar */}
+        {isSelectionMode && selectedItems.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={selectedItems.size === filteredDeliverables.length && filteredDeliverables.length > 0}
+                onChange={toggleSelectAll}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="font-medium text-blue-900">
+                {selectedItems.size} of {filteredDeliverables.length} selected
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="default"
+                className="gap-1"
+                onClick={handleBatchApprove}
+              >
+                <ThumbsUp className="w-3 h-3" />
+                Approve Selected
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                onClick={() => handleBatchDecline('Changes requested')}
+              >
+                <ThumbsDown className="w-3 h-3" />
+                Request Changes
+              </Button>
+            </div>
+          </motion.div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -272,6 +491,7 @@ export default function Deliverables() {
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
+                          {isSelectionMode && <TableHead className="w-12"></TableHead>}
                           <TableHead className="w-12"></TableHead>
                           <TableHead>Deliverable</TableHead>
                           <TableHead>Type</TableHead>
@@ -288,9 +508,28 @@ export default function Deliverables() {
                           return (
                             <TableRow
                               key={deliverable.id}
-                              className="hover:bg-gray-50/60 cursor-pointer group"
-                              onClick={() => navigate(`/deliverables/${deliverable.id}`)}
+                              className={`hover:bg-gray-50/60 cursor-pointer group ${
+                                selectedItems.has(deliverable.id) ? 'bg-blue-50' : ''
+                              }`}
+                              onClick={(e) => {
+                                if (isSelectionMode) {
+                                  e.stopPropagation();
+                                  toggleSelection(deliverable.id);
+                                } else {
+                                  navigate(`/deliverables/${deliverable.id}`);
+                                }
+                              }}
                             >
+                              {isSelectionMode && (
+                                <TableCell onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedItems.has(deliverable.id)}
+                                    onChange={() => toggleSelection(deliverable.id)}
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                  />
+                                </TableCell>
+                              )}
                               <TableCell className="text-center">
                                 {getStatusIcon(deliverable.status)}
                               </TableCell>
@@ -304,12 +543,19 @@ export default function Deliverables() {
                                       {deliverable.name}
                                     </p>
                                   </div>
-                                  {deliverable.include_in_brandbook && (
-                                    <div className="flex items-center gap-1 text-xs mt-1 text-amber-600">
-                                      <Star className="w-3 h-3" />
-                                      <span>Brandbook</span>
-                                    </div>
-                                  )}
+                                  <div className="flex items-center gap-2 mt-1">
+                                    {deliverable.stage_name && (
+                                      <span className="text-xs text-gray-500">
+                                        Stage: {deliverable.stage_name}
+                                      </span>
+                                    )}
+                                    {deliverable.include_in_brandbook && (
+                                      <div className="flex items-center gap-1 text-xs text-amber-600">
+                                        <Star className="w-3 h-3" />
+                                        <span>Brandbook</span>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -354,7 +600,37 @@ export default function Deliverables() {
                               </TableCell>
                               <TableCell className="text-center">
                                 {getActionRequired(deliverable) && (
-                                  <Badge className="bg-red-500 text-white animate-pulse">Review</Badge>
+                                  <div className="flex items-center justify-center gap-1">
+                                    {user?.permissions?.canApprove && !isSelectionMode && (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleQuickApprove(deliverable.id);
+                                          }}
+                                        >
+                                          <ThumbsUp className="w-3 h-3 text-green-600" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleQuickDecline(deliverable.id);
+                                          }}
+                                        >
+                                          <ThumbsDown className="w-3 h-3 text-red-600" />
+                                        </Button>
+                                      </>
+                                    )}
+                                    {!user?.permissions?.canApprove && (
+                                      <Badge className="bg-red-500 text-white animate-pulse">Review</Badge>
+                                    )}
+                                  </div>
                                 )}
                               </TableCell>
                               <TableCell className="text-right">

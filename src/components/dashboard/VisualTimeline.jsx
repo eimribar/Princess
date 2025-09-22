@@ -1,5 +1,6 @@
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -7,10 +8,53 @@ import { Star, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 import { getDependencyStatus } from "./DependencyUtils";
 import DependencyIndicator from "./DependencyIndicator";
+import DeliverableTooltip from "@/components/deliverables/DeliverableTooltip";
 
-const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId, hoveredStageId }) => {
+const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId, hoveredStageId, deliverables }) => {
+  const navigate = useNavigate();
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const stageRef = useRef(null);
+  const tooltipTimeoutRef = useRef(null);
+  
   const dependencyStatus = getDependencyStatus(stage, allStages);
   const isBlocked = dependencyStatus === 'blocked';
+  
+  // Get associated deliverable if this stage is a deliverable
+  const associatedDeliverable = useMemo(() => {
+    if (!stage.is_deliverable) return null;
+    // First check if stage has deliverable_id
+    if (stage.deliverable_id) {
+      return deliverables?.find(d => d.id === stage.deliverable_id);
+    }
+    // Fallback to checking by stage_id
+    return deliverables?.find(d => d.stage_id === stage.id);
+  }, [stage, deliverables]);
+  
+  // Get deliverable-specific status for coloring
+  const getDeliverableStatus = () => {
+    if (!stage.is_deliverable || !associatedDeliverable) {
+      return dependencyStatus;
+    }
+    
+    // Map deliverable status to visual status
+    switch (associatedDeliverable.status) {
+      case 'approved':
+        return 'completed';
+      case 'pending_approval':
+      case 'submitted':
+        return 'pending_approval';
+      case 'declined':
+        return 'declined';
+      case 'wip':
+      case 'in_iterations':
+        return 'in_progress';
+      case 'draft':
+      case 'not_started':
+      default:
+        return dependencyStatus === 'blocked' ? 'blocked' : 'not_started';
+    }
+  };
   
   // Check if this stage is related to the hovered stage
   const isRelated = useMemo(() => {
@@ -41,6 +85,18 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
         text: 'text-white',
         shadow: 'shadow-blue-200'
       },
+      pending_approval: {
+        bg: 'bg-amber-500',
+        border: 'border-amber-600',
+        text: 'text-white',
+        shadow: 'shadow-amber-200'
+      },
+      declined: {
+        bg: 'bg-red-500',
+        border: 'border-red-600',
+        text: 'text-white',
+        shadow: 'shadow-red-200'
+      },
       ready: {
         bg: 'bg-green-100',
         border: 'border-green-400',
@@ -60,15 +116,14 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
         shadow: 'shadow-gray-100'
       }
     };
-    // The status passed here is dependencyStatus, which `getDependencyStatus` function
-    // in DependencyUtils.ts must be designed to return 'completed', 'in_progress', 'ready', 'blocked', or 'not_started'
-    // for this mapping to work correctly.
     return configs[status] || configs.not_started;
   };
 
-  const config = getStatusConfig(dependencyStatus, stage.is_deliverable);
+  // Use deliverable status for deliverables, dependency status for regular stages
+  const displayStatus = stage.is_deliverable ? getDeliverableStatus() : dependencyStatus;
+  const config = getStatusConfig(displayStatus, stage.is_deliverable);
   const isActive = isSelected;
-  const assignedMember = teamMembers?.find(member => member.email === stage.assigned_to);
+  const assignedMember = teamMembers?.find(member => member.id === stage.assigned_to);
 
   // Apply glow effect based on relationship
   const getGlowEffect = () => {
@@ -78,24 +133,67 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
     return '';
   };
 
+  // Handle mouse enter for tooltip
+  const handleMouseEnter = (e) => {
+    setHoveredStageId && setHoveredStageId(stage.id);
+    
+    if (stage.is_deliverable && associatedDeliverable) {
+      // Get position of the stage element
+      const rect = stageRef.current?.getBoundingClientRect();
+      if (rect) {
+        setTooltipPosition({ 
+          x: rect.left + rect.width / 2, 
+          y: rect.top 
+        });
+        
+        // Show tooltip after a short delay
+        tooltipTimeoutRef.current = setTimeout(() => {
+          setShowTooltip(true);
+        }, 500);
+      }
+    }
+  };
+
+  // Handle mouse leave
+  const handleMouseLeave = () => {
+    setHoveredStageId && setHoveredStageId(null);
+    
+    // Clear timeout and hide tooltip
+    if (tooltipTimeoutRef.current) {
+      clearTimeout(tooltipTimeoutRef.current);
+    }
+    setShowTooltip(false);
+  };
+
+  // Handle click - always open sidebar for all stages
+  const handleClick = () => {
+    onClick(stage.id);
+  };
+
   return (
-    <motion.div
-      className={`flex flex-col items-center gap-2 relative transition-all duration-300 cursor-pointer ${isBlocked ? 'opacity-75' : ''} pb-12`}
-      data-stage-id={stage.id}
-      onClick={() => onClick(stage.id)}
-      onMouseEnter={() => setHoveredStageId && setHoveredStageId(stage.id)}
-      onMouseLeave={() => setHoveredStageId && setHoveredStageId(null)}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-    >
+    <>
+      <motion.div
+        ref={stageRef}
+        className={`flex flex-col items-center gap-2 relative transition-all duration-300 cursor-pointer ${isBlocked ? 'opacity-75' : ''} pb-12`}
+        data-stage-id={stage.id}
+        onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+      >
       <div className={`
         relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300
         ${config.bg} ${config.border} border-2 ${config.shadow} shadow-lg
         ${isActive ? 'ring-4 ring-indigo-500 ring-offset-2' : getGlowEffect()}
       `}>
-        <span className={`text-sm font-bold ${config.text}`}>
-          {stage.number_index}
-        </span>
+        {dependencyStatus === 'blocked' ? (
+          <Lock className={`w-5 h-5 ${config.text}`} />
+        ) : (
+          <span className={`text-sm font-bold ${config.text}`}>
+            {stage.number_index}
+          </span>
+        )}
 
         <DependencyIndicator
           status={dependencyStatus}
@@ -104,9 +202,58 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
         />
 
         {stage.is_deliverable && (
-          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-amber-400 rounded-full border-2 border-white flex items-center justify-center">
-            <Star className="w-2.5 h-2.5 text-white fill-current" />
-          </div>
+          <>
+            {/* Star Badge with Animation */}
+            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center ${
+              associatedDeliverable?.status === 'pending_approval' ? 'animate-pulse' : ''
+            } ${
+              associatedDeliverable?.status === 'approved' ? 'bg-green-500' :
+              associatedDeliverable?.status === 'pending_approval' ? 'bg-amber-400' :
+              associatedDeliverable?.status === 'declined' ? 'bg-red-500' :
+              'bg-amber-400'
+            }`}>
+              <Star className="w-2.5 h-2.5 text-white fill-current" />
+            </div>
+            
+            {/* Iteration Badge */}
+            {associatedDeliverable?.current_iteration > 0 && (
+              <div className="absolute -top-2 -right-2 bg-white rounded-full border-2 border-gray-300 px-1 min-w-[20px] h-5 flex items-center justify-center">
+                <span className={`text-xs font-bold ${
+                  associatedDeliverable.current_iteration >= (associatedDeliverable.max_iterations || 3) 
+                    ? 'text-red-600' 
+                    : 'text-gray-700'
+                }`}>
+                  {associatedDeliverable.current_iteration}/{associatedDeliverable.max_iterations || 3}
+                </span>
+              </div>
+            )}
+            
+            {/* Progress Ring for Pending Approval */}
+            {associatedDeliverable?.status === 'pending_approval' && (
+              <svg className="absolute inset-0 w-12 h-12 -rotate-90">
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="22"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  fill="none"
+                  className="text-amber-400 opacity-30"
+                />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="22"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeDasharray={`${2 * Math.PI * 22}`}
+                  strokeDashoffset={`${2 * Math.PI * 22 * 0.25}`}
+                  className="text-amber-500 animate-pulse"
+                />
+              </svg>
+            )}
+          </>
         )}
         
         {isBlocked && (
@@ -126,22 +273,45 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
       {/* Assigned Member - Fixed positioning */}
       {assignedMember && (
         <div className="flex flex-col items-center gap-1 mt-2">
-          <Avatar className="w-5 h-5 border border-white shadow-sm">
-            <AvatarImage src={assignedMember.profile_image} />
-            <AvatarFallback className="text-xs bg-slate-100 text-slate-600">
-              {assignedMember.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <p className="text-xs text-slate-500 text-center whitespace-nowrap max-w-16 truncate">
+          <div className="relative">
+            <Avatar className={`w-5 h-5 border ${
+              dependencyStatus === 'blocked' 
+                ? 'border-amber-400 shadow-amber-200' 
+                : 'border-white shadow-sm'
+            }`}>
+              <AvatarImage src={assignedMember.profile_image} />
+              <AvatarFallback className={`text-xs ${
+                dependencyStatus === 'blocked'
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-slate-100 text-slate-600'
+              }`}>
+                {assignedMember.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+          <p className={`text-xs text-center whitespace-nowrap max-w-16 truncate ${
+            dependencyStatus === 'blocked'
+              ? 'text-amber-600 font-medium'
+              : 'text-slate-500'
+          }`}>
             {assignedMember.name.split(' ')[0]}
           </p>
         </div>
       )}
-    </motion.div>
+      </motion.div>
+      
+      {/* Deliverable Tooltip */}
+      <DeliverableTooltip
+        stage={stage}
+        deliverable={associatedDeliverable}
+        isVisible={showTooltip}
+        position={tooltipPosition}
+      />
+    </>
   );
 };
 
-const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers, setHoveredStageId, hoveredStageId }) => {
+const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers, setHoveredStageId, hoveredStageId, deliverables }) => {
   const phaseStages = stages
     .filter(stage => stage.category === phase.id)
     .sort((a, b) => a.number_index - b.number_index);
@@ -176,6 +346,7 @@ const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMember
               allStages={stages} // Pass all stages for dependency checks
               setHoveredStageId={setHoveredStageId}
               hoveredStageId={hoveredStageId}
+              deliverables={deliverables} // Pass deliverables for status checking
             />
           ))}
         </div>
@@ -184,7 +355,7 @@ const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMember
   );
 };
 
-export default function VisualTimeline({ stages, onStageClick, selectedStageId, teamMembers }) {
+export default function VisualTimeline({ stages, onStageClick, selectedStageId, teamMembers, deliverables }) {
   const [hoveredStageId, setHoveredStageId] = React.useState(null);
 
   const phases = [
@@ -259,6 +430,7 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
           teamMembers={teamMembers}
           setHoveredStageId={setHoveredStageId}
           hoveredStageId={hoveredStageId}
+          deliverables={deliverables}
         />
       ))}
 

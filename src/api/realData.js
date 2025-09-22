@@ -31,7 +31,7 @@ const realProject = {
   status: "in_progress",
   ...getProjectDates(),
   progress_percentage: calculateInitialProgress(),
-  updated_date: new Date().toISOString()
+  updated_at: new Date().toISOString()
 };
 
 function calculateInitialProgress() {

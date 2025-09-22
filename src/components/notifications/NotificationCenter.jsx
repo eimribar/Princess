@@ -276,6 +276,25 @@ export default function NotificationCenter({
                               <p className={`text-sm ${!notification.read ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
                                 {getNotificationMessage(notification)}
                               </p>
+                              
+                              {/* Action Button if available */}
+                              {notification.data?.action_url && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-2 text-xs gap-1.5"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMarkAsRead(notification.id);
+                                    // Navigate to action URL
+                                    window.location.href = notification.data.action_url;
+                                  }}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  {notification.data.action_label || 'View'}
+                                </Button>
+                              )}
+                              
                               <div className="flex items-center justify-between mt-1">
                                 <p className="text-xs text-gray-500">
                                   {formatDistanceToNow(new Date(notification.created_date), { addSuffix: true })}

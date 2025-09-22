@@ -22,6 +22,7 @@ import FeedbackManager from "@/components/deliverables/FeedbackManager";
 import FeedbackLimitIndicator from "@/components/deliverables/FeedbackLimitIndicator";
 import DeadlineImpactWarning from "@/components/deliverables/DeadlineImpactWarning";
 import ApprovalFinality from "@/components/deliverables/ApprovalFinality";
+import StageInfoCard from "@/components/deliverables/StageInfoCard";
 import {
   ArrowLeft,
   FileText,
@@ -42,7 +43,9 @@ import {
   Eye,
   ThumbsUp,
   ThumbsDown,
-  X
+  X,
+  ChevronRight,
+  Home
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
@@ -467,15 +470,37 @@ export default function DeliverableDetail() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-6xl mx-auto space-y-8">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-          <Button variant="outline" onClick={() => navigate(-1)} className="gap-2 mb-6">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Deliverables
-          </Button>
+          {/* Breadcrumb Navigation */}
+          <nav className="flex items-center gap-2 text-sm text-gray-600 mb-6">
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="flex items-center gap-1 hover:text-gray-900 transition-colors"
+            >
+              <Home className="w-4 h-4" />
+              Dashboard
+            </button>
+            <ChevronRight className="w-4 h-4 text-gray-400" />
+            {stage?.category && (
+              <>
+                <span className="capitalize">
+                  {stage.category.replace('_', ' ')}
+                </span>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </>
+            )}
+            {stage && (
+              <>
+                <span>Step {stage.number_index}: {stage.name}</span>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </>
+            )}
+            <span className="font-medium text-gray-900">{deliverable.name}</span>
+          </nav>
 
           <div className="flex justify-between items-start mb-6">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{deliverable.name}</h1>
-              <p className="text-slate-600 mt-1">Part of "{stage?.name || 'Stage'}"</p>
+              <p className="text-slate-600 mt-1">Deliverable for Stage {stage?.number_index}: {stage?.name}</p>
             </div>
             <Badge className={`${getStatusColor(deliverable.status)} text-lg px-4 py-2`}>
               {deliverable.status.replace('_', ' ').toUpperCase()}
@@ -601,6 +626,15 @@ export default function DeliverableDetail() {
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6 mt-0">
+                {/* Stage Information Card */}
+                {stage && (
+                  <StageInfoCard 
+                    stage={stage} 
+                    deliverable={deliverable}
+                    teamMembers={teamMembers}
+                  />
+                )}
+                
                 {/* Status Overview */}
                 <StatusIndicator deliverable={deliverable} />
                 
