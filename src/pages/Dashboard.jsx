@@ -66,7 +66,27 @@ export default function Dashboard() {
     setStages(contextStages);
     setDeliverables(contextDeliverables);
     setTeamMembers(contextTeamMembers);
-  }, [contextProject, contextStages, contextDeliverables, contextTeamMembers]);
+    
+    // Calculate progress when context data updates (especially on initial load/refresh)
+    if (contextStages.length > 0 && currentProjectId) {
+      stageManager.calculateRealProgress(currentProjectId)
+        .then(progress => {
+          console.log('Progress calculated from context update:', {
+            projectId: currentProjectId,
+            stageCount: contextStages.length,
+            calculatedProgress: progress
+          });
+          setRealProgress(progress);
+        })
+        .catch(error => {
+          console.error('Failed to calculate initial progress:', error);
+          setRealProgress(0);
+        });
+    } else if (contextStages.length === 0) {
+      // No stages = 0% progress
+      setRealProgress(0);
+    }
+  }, [contextProject, contextStages, contextDeliverables, contextTeamMembers, currentProjectId]);
 
   // Handle project switching from URL
   useEffect(() => {
@@ -74,6 +94,22 @@ export default function Dashboard() {
       switchProject(projectId);
     }
   }, [projectId, currentProjectId, switchProject]);
+  
+  // Ensure progress is calculated on initial mount if stages are already loaded
+  useEffect(() => {
+    // This handles the case where ProjectContext already has data on mount
+    if (realProgress === 0 && stages.length > 0 && currentProjectId) {
+      console.log('Calculating initial progress on mount');
+      stageManager.calculateRealProgress(currentProjectId)
+        .then(progress => {
+          console.log('Initial mount progress calculated:', progress);
+          setRealProgress(progress);
+        })
+        .catch(error => {
+          console.error('Failed to calculate mount progress:', error);
+        });
+    }
+  }, []); // Run once on mount
 
   const loadData = useCallback(async () => {
     // Abort any previous load request
@@ -250,6 +286,14 @@ export default function Dashboard() {
       // Use optimistic update for immediate UI response
       await updateStageOptimistic(stageId, updates);
       
+      // Recalculate progress immediately after status change
+      if (updates.status && currentProjectId) {
+        // Calculate new progress based on updated stages
+        const newProgress = await stageManager.calculateRealProgress(currentProjectId);
+        setRealProgress(newProgress);
+        console.log('Progress recalculated after status change:', newProgress);
+      }
+      
       // Only reload comments if status changed (might have system comments)
       if (updates.status) {
         await loadComments();
@@ -378,7 +422,7 @@ export default function Dashboard() {
         ) : (
           <div className="p-6 space-y-6">
             {/* Enhanced attention widget for clients */}
-            {isClient && deliverables.filter(d => d.status === 'pending_approval').length > 0 && (
+            {isClient && deliverables.filter(d => d.status === 'submitted').length > 0 && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -389,7 +433,7 @@ export default function Dashboard() {
                   <div>
                     <h3 className="font-semibold text-red-900">Action Required</h3>
                     <p className="text-sm text-red-700 mt-1">
-                      You have {deliverables.filter(d => d.status === 'pending_approval').length} deliverables awaiting your review
+                      You have {deliverables.filter(d => d.status === 'submitted').length} deliverables awaiting your review
                     </p>
                   </div>
                 </div>

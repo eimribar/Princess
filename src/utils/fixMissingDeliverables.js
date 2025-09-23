@@ -128,13 +128,13 @@ function mapStageStatusToDeliverableStatus(stageStatus) {
     case 'completed':
       return 'approved'; // Assume completed stages have approved deliverables
     case 'in_progress':
-      return 'wip'; // Work in progress
+      return 'in_progress'; // Work in progress
     case 'not_started':
-      return 'draft';
+      return 'not_started';
     case 'blocked':
-      return 'draft';
+      return 'not_started';
     default:
-      return 'draft';
+      return 'not_started';
   }
 }
 

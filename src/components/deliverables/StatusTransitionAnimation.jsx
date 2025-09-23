@@ -59,7 +59,7 @@ export default function StatusTransitionAnimation({
           message: 'Changes Requested',
           subMessage: 'Please review feedback and submit revision'
         };
-      case 'pending_approval':
+      case 'submitted':
       case 'submitted':
         return {
           icon: Clock,
@@ -69,7 +69,7 @@ export default function StatusTransitionAnimation({
           subMessage: 'Awaiting client approval'
         };
       case 'in_progress':
-      case 'wip':
+      case 'in_progress':
         return {
           icon: TrendingUp,
           color: 'text-blue-600',
@@ -155,7 +155,7 @@ export default function StatusTransitionAnimation({
                 className={`h-full ${
                   status === 'approved' ? 'bg-green-500' :
                   status === 'declined' ? 'bg-red-500' :
-                  status === 'pending_approval' ? 'bg-amber-500' :
+                  status === 'submitted' ? 'bg-amber-500' :
                   'bg-blue-500'
                 }`}
               />

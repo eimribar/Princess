@@ -35,7 +35,7 @@ export default function ClientApprovalDashboard({ deliverables = [], onApprove, 
 
   // Filter deliverables by status
   const pendingDeliverables = deliverables.filter(d => 
-    d.status === 'pending_approval' || d.status === 'submitted'
+    d.status === 'submitted'
   );
   
   const approvedToday = deliverables.filter(d => {

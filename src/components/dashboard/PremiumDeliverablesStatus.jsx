@@ -19,10 +19,11 @@ import {
 
 export default function PremiumDeliverablesStatus({ deliverables }) {
   const deliverablesByStatus = {
-    completed: deliverables?.filter(d => d.status === 'completed') || [],
+    completed: deliverables?.filter(d => d.status === 'approved') || [],
     in_progress: deliverables?.filter(d => d.status === 'in_progress') || [],
-    pending_approval: deliverables?.filter(d => d.status === 'pending_approval') || [],
-    not_started: deliverables?.filter(d => d.status === 'not_started' || d.status === 'draft') || []
+    submitted: deliverables?.filter(d => d.status === 'submitted') || [],
+    not_started: deliverables?.filter(d => d.status === 'not_started') || [],
+    declined: deliverables?.filter(d => d.status === 'declined') || []
   };
 
   const totalDeliverables = deliverables?.length || 0;
@@ -47,7 +48,7 @@ export default function PremiumDeliverablesStatus({ deliverables }) {
           border: 'border-blue-200',
           badge: 'bg-blue-50 text-blue-700 border-blue-200'
         };
-      case 'pending_approval':
+      case 'submitted':
         return {
           icon: AlertCircle,
           color: 'text-amber-600',

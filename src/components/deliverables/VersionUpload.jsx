@@ -128,7 +128,7 @@ export default function VersionUpload({
       const versionData = {
         id: Date.now().toString(),
         version_number: versionNumber,
-        status: 'draft',
+        status: 'not_started',
         file_url: URL.createObjectURL(selectedFile), // In real app, this would be the uploaded file URL
         file_name: selectedFile.name,
         file_size: selectedFile.size,

@@ -133,7 +133,6 @@ export default function StageSidebarV2({
             await SupabaseComment.create({
               project_id: descendant.project_id,
               stage_id: descendant.id,
-              comment_text: `Status automatically reset because dependency "${stage.name}" was un-completed.`,
               content: `Status automatically reset because dependency "${stage.name}" was un-completed.`,
               author_name: 'System',
               author_email: 'system@princess.app',
@@ -168,7 +167,22 @@ export default function StageSidebarV2({
 
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
   const deadlineDate = stage.deadline ? new Date(stage.deadline) : null;
-  const assignedMember = teamMembers.find(member => member.id === stage.assigned_to);
+  
+  // For deliverable stages, use the deliverable's assigned_to as single source of truth
+  const getAssignedMember = () => {
+    if (stage.is_deliverable) {
+      const associatedDeliverable = deliverables?.find(d => 
+        d.id === stage.deliverable_id || d.stage_id === stage.id
+      );
+      if (associatedDeliverable?.assigned_to) {
+        return teamMembers.find(member => member.id === associatedDeliverable.assigned_to);
+      }
+    }
+    // For non-deliverable stages, use stage's assigned_to
+    return teamMembers.find(member => member.id === stage.assigned_to);
+  };
+  
+  const assignedMember = getAssignedMember();
 
   // Get blocked dependencies
   const blockedDependencies = isLocked ? 
@@ -267,6 +281,7 @@ export default function StageSidebarV2({
           onStageUpdate={onStageUpdate}
           teamMembers={teamMembers}
           isReadOnly={!onStageUpdate}
+          deliverables={deliverables}
         />
       </div>
 
@@ -302,9 +317,9 @@ export default function StageSidebarV2({
                 </div>
                 <Badge variant="outline" className={`text-xs font-medium ${
                   associatedDeliverable.status === 'approved' ? 'bg-green-50 text-green-700 border-green-300' :
-                  associatedDeliverable.status === 'pending_approval' ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                  associatedDeliverable.status === 'submitted' ? 'bg-amber-50 text-amber-700 border-amber-300' :
                   associatedDeliverable.status === 'declined' ? 'bg-red-50 text-red-700 border-red-300' :
-                  associatedDeliverable.status === 'wip' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                  associatedDeliverable.status === 'in_progress' ? 'bg-blue-50 text-blue-700 border-blue-300' :
                   'bg-gray-50 text-gray-700 border-gray-300'
                 }`}>
                   {associatedDeliverable.status.replace('_', ' ').toUpperCase()}

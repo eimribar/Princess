@@ -24,7 +24,15 @@ export default function StageInfoCard({ stage, deliverable, teamMembers = [] }) 
   
   if (!stage) return null;
   
-  const assignedMember = teamMembers.find(m => m.id === stage.assigned_to);
+  // For deliverable stages, use deliverable.assigned_to as single source of truth
+  const getAssignedTo = () => {
+    if (stage.is_deliverable && deliverable?.assigned_to) {
+      return deliverable.assigned_to;
+    }
+    return stage.assigned_to;
+  };
+  
+  const assignedMember = teamMembers.find(m => m.id === getAssignedTo());
   
   const getStatusIcon = (status) => {
     switch (status) {

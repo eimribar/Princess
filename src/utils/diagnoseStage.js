@@ -77,6 +77,12 @@ export async function diagnoseStage(stageNumber) {
 }
 
 // Make it available globally for console execution
+// Import test function
+import { testDeliverableFix } from './testDeliverableFix';
+import { debugUpdate } from './debugUpdate';
+
 if (typeof window !== 'undefined') {
   window.diagnoseStage = diagnoseStage;
+  window.testDeliverableFix = testDeliverableFix;
+  window.debugUpdate = debugUpdate;
 }

@@ -41,9 +41,9 @@ export default function VersionReport({
   const getVersionStats = () => {
     const total = versions.length;
     const approved = versions.filter(v => v.status === 'approved').length;
-    const pending = versions.filter(v => v.status === 'pending_approval').length;
+    const pending = versions.filter(v => v.status === 'submitted').length;
     const declined = versions.filter(v => v.status === 'declined').length;
-    const drafts = versions.filter(v => v.status === 'draft').length;
+    const drafts = versions.filter(v => v.status === 'not_started').length;
 
     return { total, approved, pending, declined, drafts };
   };

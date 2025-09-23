@@ -41,15 +41,13 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
     switch (associatedDeliverable.status) {
       case 'approved':
         return 'completed';
-      case 'pending_approval':
       case 'submitted':
-        return 'pending_approval';
+        return 'submitted';
       case 'declined':
         return 'declined';
-      case 'wip':
+      case 'in_progress':
       case 'in_iterations':
         return 'in_progress';
-      case 'draft':
       case 'not_started':
       default:
         return dependencyStatus === 'blocked' ? 'blocked' : 'not_started';
@@ -85,7 +83,7 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
         text: 'text-white',
         shadow: 'shadow-blue-200'
       },
-      pending_approval: {
+      submitted: {
         bg: 'bg-amber-500',
         border: 'border-amber-600',
         text: 'text-white',
@@ -123,7 +121,11 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
   const displayStatus = stage.is_deliverable ? getDeliverableStatus() : dependencyStatus;
   const config = getStatusConfig(displayStatus, stage.is_deliverable);
   const isActive = isSelected;
-  const assignedMember = teamMembers?.find(member => member.id === stage.assigned_to);
+  
+  // For deliverable stages, use deliverable.assigned_to; for regular stages, use stage.assigned_to
+  const assignedMember = stage.is_deliverable && associatedDeliverable
+    ? teamMembers?.find(member => member.id === associatedDeliverable.assigned_to || member.email === associatedDeliverable.assigned_to)
+    : teamMembers?.find(member => member.id === stage.assigned_to || member.email === stage.assigned_to);
 
   // Apply glow effect based on relationship
   const getGlowEffect = () => {
@@ -203,55 +205,32 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
 
         {stage.is_deliverable && (
           <>
-            {/* Star Badge with Animation */}
-            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center ${
-              associatedDeliverable?.status === 'pending_approval' ? 'animate-pulse' : ''
-            } ${
+            {/* Star Badge - simplified positioning */}
+            <div className={`absolute -bottom-1.5 -right-1.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center shadow-sm ${
               associatedDeliverable?.status === 'approved' ? 'bg-green-500' :
-              associatedDeliverable?.status === 'pending_approval' ? 'bg-amber-400' :
+              associatedDeliverable?.status === 'submitted' ? 'bg-amber-500' :
               associatedDeliverable?.status === 'declined' ? 'bg-red-500' :
-              'bg-amber-400'
+              'bg-gray-400'
             }`}>
-              <Star className="w-2.5 h-2.5 text-white fill-current" />
+              <Star className="w-3 h-3 text-white fill-white" />
             </div>
             
-            {/* Iteration Badge */}
+            {/* Iteration Badge - moved to avoid overlap */}
             {associatedDeliverable?.current_iteration > 0 && (
-              <div className="absolute -top-2 -right-2 bg-white rounded-full border-2 border-gray-300 px-1 min-w-[20px] h-5 flex items-center justify-center">
-                <span className={`text-xs font-bold ${
+              <div className="absolute -top-1.5 -left-1.5 bg-white rounded-full border border-gray-300 px-1 min-w-[20px] h-4 flex items-center justify-center shadow-sm">
+                <span className={`text-[10px] font-semibold ${
                   associatedDeliverable.current_iteration >= (associatedDeliverable.max_iterations || 3) 
                     ? 'text-red-600' 
-                    : 'text-gray-700'
+                    : 'text-gray-600'
                 }`}>
                   {associatedDeliverable.current_iteration}/{associatedDeliverable.max_iterations || 3}
                 </span>
               </div>
             )}
             
-            {/* Progress Ring for Pending Approval */}
-            {associatedDeliverable?.status === 'pending_approval' && (
-              <svg className="absolute inset-0 w-12 h-12 -rotate-90">
-                <circle
-                  cx="24"
-                  cy="24"
-                  r="22"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                  className="text-amber-400 opacity-30"
-                />
-                <circle
-                  cx="24"
-                  cy="24"
-                  r="22"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  fill="none"
-                  strokeDasharray={`${2 * Math.PI * 22}`}
-                  strokeDashoffset={`${2 * Math.PI * 22 * 0.25}`}
-                  className="text-amber-500 animate-pulse"
-                />
-              </svg>
+            {/* Subtle glow for submitted status instead of progress ring */}
+            {associatedDeliverable?.status === 'submitted' && (
+              <div className="absolute inset-0 rounded-full bg-amber-400 opacity-20 animate-pulse" />
             )}
           </>
         )}

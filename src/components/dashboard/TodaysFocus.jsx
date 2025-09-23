@@ -52,7 +52,7 @@ export default function TodaysFocus({
     
     // Find deliverables needing approval
     deliverables.forEach(deliverable => {
-      if (deliverable.status === 'pending_approval' || deliverable.status === 'submitted') {
+      if (deliverable.status === 'submitted') {
         actions.push({
           id: deliverable.id,
           type: 'approve',

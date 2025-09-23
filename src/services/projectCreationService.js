@@ -207,7 +207,7 @@ class ProjectCreationService {
           category: stage.category,
           type: this.getDeliverableType(stage),
           priority: stage.blocking_priority,
-          status: 'draft',
+          status: 'not_started',
           max_iterations: this.getMaxIterations(stage.blocking_priority),
           current_iteration: 0,
           original_deadline: stage.end_date.split('T')[0], // Ensure DATE format

@@ -110,21 +110,86 @@ export function ProjectProvider({ children }) {
     }
   }, [currentProjectId]);
   
-  // Initialize data on mount
-  useEffect(() => {
-    // Get project ID from URL or localStorage
-    const urlPath = window.location.pathname;
-    const match = urlPath.match(/\/dashboard\/([^\/]+)/);
-    const projectIdFromUrl = match ? match[1] : null;
+  /**
+   * Auto-discover project from current route
+   * This ensures the correct project is loaded even when accessing entities directly
+   */
+  const discoverProjectFromRoute = async () => {
+    const path = window.location.pathname;
     
-    if (projectIdFromUrl) {
-      setCurrentProjectId(projectIdFromUrl);
-      loadProjectData(projectIdFromUrl);
-    } else {
-      loadProjectData();
+    // Check if we're on a deliverable page
+    if (path.includes('/deliverables/')) {
+      const deliverableId = path.split('/deliverables/')[1]?.split('/')[0];
+      if (deliverableId && deliverableId !== 'undefined') {
+        try {
+          const deliverable = await SupabaseDeliverable.get(deliverableId);
+          if (deliverable?.project_id) {
+            console.log(`Discovered project ${deliverable.project_id} from deliverable ${deliverableId}`);
+            return deliverable.project_id;
+          }
+        } catch (error) {
+          console.error('Error loading deliverable for project discovery:', error);
+        }
+      }
     }
     
-    initializeSync();
+    // Check if we're on a stage-specific page
+    if (path.includes('/stage/')) {
+      const stageId = path.split('/stage/')[1]?.split('/')[0];
+      if (stageId && stageId !== 'undefined') {
+        try {
+          const stage = await SupabaseStage.get(stageId);
+          if (stage?.project_id) {
+            console.log(`Discovered project ${stage.project_id} from stage ${stageId}`);
+            return stage.project_id;
+          }
+        } catch (error) {
+          console.error('Error loading stage for project discovery:', error);
+        }
+      }
+    }
+    
+    // Check localStorage for last used project
+    const lastProjectId = localStorage.getItem('princess_last_project_id');
+    if (lastProjectId) {
+      console.log(`Using last project from localStorage: ${lastProjectId}`);
+      return lastProjectId;
+    }
+    
+    // Return null to trigger default project loading
+    return null;
+  };
+  
+  // Initialize data on mount
+  useEffect(() => {
+    const initializeProject = async () => {
+      // First try to get project ID from URL
+      const urlPath = window.location.pathname;
+      const dashboardMatch = urlPath.match(/\/dashboard\/([^\/]+)/);
+      
+      let projectIdToLoad = null;
+      
+      if (dashboardMatch) {
+        projectIdToLoad = dashboardMatch[1];
+        console.log(`Loading project from dashboard URL: ${projectIdToLoad}`);
+      } else {
+        // Auto-discover project from current route
+        projectIdToLoad = await discoverProjectFromRoute();
+      }
+      
+      if (projectIdToLoad) {
+        setCurrentProjectId(projectIdToLoad);
+        localStorage.setItem('princess_last_project_id', projectIdToLoad);
+        await loadProjectData(projectIdToLoad);
+      } else {
+        console.log('No project ID found, loading first available project');
+        await loadProjectData();
+      }
+      
+      initializeSync();
+    };
+    
+    initializeProject();
     
     return () => {
       if (syncChannel.current) {
@@ -327,6 +392,20 @@ export function ProjectProvider({ children }) {
       syncChannel.current.onmessage = (event) => {
         handleSyncMessage(event.data);
       };
+      
+      // Also listen to deliverable-updates channel for status changes from DeliverableDetail page
+      const deliverableChannel = new BroadcastChannel('deliverable-updates');
+      deliverableChannel.onmessage = (event) => {
+        const { type, deliverableId, newStatus, projectId } = event.data;
+        if (type === 'status_updated' && projectId === currentProjectId) {
+          // Update the deliverable in our state
+          setDeliverables(prev => prev.map(d => 
+            d.id === deliverableId ? { ...d, status: newStatus } : d
+          ));
+          
+          console.log('[ProjectContext] Received deliverable status update via broadcast:', deliverableId, newStatus);
+        }
+      };
     }
   };
 
@@ -402,25 +481,110 @@ export function ProjectProvider({ children }) {
    */
   const updateStageOptimistic = async (stageId, updates) => {
     try {
-      // Update local state immediately for smooth UX
-      setStages(prev => prev.map(s => 
-        s.id === stageId ? { ...s, ...updates } : s
-      ));
+      // Capture the current stage BEFORE updating
+      const currentStage = stages.find(s => s.id === stageId);
+      if (!currentStage) {
+        console.error('Stage not found:', stageId);
+        return false;
+      }
       
-      // Persist to backend in background
-      await SupabaseStage.update(stageId, updates);
+      // Update local state IMMEDIATELY for instant UI response
+      setStages(prev => {
+        const newStages = prev.map(s => 
+          s.id === stageId ? { ...s, ...updates, updated_at: new Date().toISOString() } : s
+        );
+        return [...newStages];
+      });
       
-      // Broadcast to other tabs
-      broadcastChange('stage_update', { id: stageId, updates });
+      // If a deliverable stage's status changed, update the associated deliverable IMMEDIATELY
+      if (currentStage.is_deliverable && currentStage.deliverable_id && updates.status) {
+        // Map stage status to deliverable status
+        const deliverableStatus = updates.status === 'completed' ? 'approved' :
+                                 updates.status === 'blocked' ? 'declined' :
+                                 updates.status === 'in_progress' ? 'in_progress' :
+                                 'not_started';
+        
+        setDeliverables(prev => {
+          const newDeliverables = prev.map(d =>
+            d.id === currentStage.deliverable_id 
+              ? { ...d, status: deliverableStatus, updated_at: new Date().toISOString() }
+              : d
+          );
+          return [...newDeliverables];
+        });
+      }
+      
+      // Persist to backend in background WITHOUT blocking the UI update
+      // Using Promise to ensure proper async handling
+      (async () => {
+        try {
+          // Add small delay to ensure UI updates first
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
+          // Persist the update with proper status mapping
+          const result = await SupabaseStage.update(stageId, updates);
+          
+          if (!result) {
+            throw new Error('Update returned no result');
+          }
+          
+          console.log('Stage update persisted:', {
+            stageId,
+            updates,
+            result: result.status
+          });
+          
+          // Broadcast to other tabs after successful save
+          broadcastChange('stage_update', { id: stageId, updates });
+          
+          // If status changed and it's a deliverable stage, sync the deliverable
+          if (updates.status && currentStage.is_deliverable && currentStage.deliverable_id) {
+            const deliverableStatus = updates.status === 'completed' ? 'approved' :
+                                     updates.status === 'blocked' ? 'declined' :
+                                     updates.status === 'in_progress' ? 'in_progress' :
+                                     'not_started';
+            
+            try {
+              await SupabaseDeliverable.update(currentStage.deliverable_id, {
+                status: deliverableStatus,
+                _skipStageSync: true
+              });
+            } catch (deliverableError) {
+              console.error('Failed to sync deliverable status:', deliverableError);
+              // Don't fail the whole operation
+            }
+          }
+        } catch (error) {
+          console.error('Failed to persist stage update:', error);
+          // Revert on error
+          try {
+            const originalStage = await SupabaseStage.get(stageId);
+            if (originalStage) {
+              setStages(prev => prev.map(s => 
+                s.id === stageId ? originalStage : s
+              ));
+              
+              // Also revert deliverable if needed
+              if (currentStage.is_deliverable && currentStage.deliverable_id) {
+                const originalDeliverable = await SupabaseDeliverable.get(currentStage.deliverable_id);
+                if (originalDeliverable) {
+                  setDeliverables(prev => prev.map(d =>
+                    d.id === currentStage.deliverable_id ? originalDeliverable : d
+                  ));
+                }
+              }
+            }
+          } catch (revertError) {
+            console.error('Failed to revert after error:', revertError);
+          }
+          
+          toast.error('Failed to save stage update. Please refresh the page.');
+        }
+      })();
       
       return true;
     } catch (error) {
-      // Revert on error
-      const originalStage = await SupabaseStage.get(stageId);
-      setStages(prev => prev.map(s => 
-        s.id === stageId ? originalStage : s
-      ));
-      
+      console.error('Failed to update stage optimistically:', error);
       toast.error('Failed to update stage');
       return false;
     }
@@ -595,46 +759,172 @@ export function ProjectProvider({ children }) {
   };
 
   /**
-   * Update deliverable
+   * Update deliverable - Enterprise-grade with retry logic and auto-recovery
    */
-  const updateDeliverable = async (deliverableId, updates) => {
-    try {
-      // Save to history
-      saveToHistory();
-      
-      // Update local state
-      setDeliverables(prev => prev.map(d => 
-        d.id === deliverableId ? { ...d, ...updates } : d
-      ));
-      
-      // Persist to backend
-      await SupabaseDeliverable.update(deliverableId, updates);
-      
-      // If deliverable is linked to a stage, update stage dates
-      const deliverable = deliverables.find(d => d.id === deliverableId);
-      if (deliverable?.stage_id && updates.deadline) {
-        const stage = stages.find(s => s.id === deliverable.stage_id);
-        if (stage) {
-          await updateStage(stage.id, { 
-            end_date: updates.deadline 
-          });
+  const updateDeliverable = async (deliverableId, updates, options = {}) => {
+    const maxRetries = options.maxRetries || 3;
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Save to history for undo capability
+        saveToHistory();
+        
+        // First, ensure we have the deliverable's project loaded
+        let deliverableToUpdate = deliverables.find(d => d.id === deliverableId);
+        
+        // If deliverable not in context, fetch it and ensure correct project is loaded
+        if (!deliverableToUpdate) {
+          console.log(`Deliverable ${deliverableId} not in context, fetching...`);
+          deliverableToUpdate = await SupabaseDeliverable.get(deliverableId);
+          
+          if (!deliverableToUpdate) {
+            throw new Error(`Deliverable ${deliverableId} not found`);
+          }
+          
+          // If the deliverable belongs to a different project, load that project
+          if (deliverableToUpdate.project_id && deliverableToUpdate.project_id !== currentProjectId) {
+            console.log(`Switching to project ${deliverableToUpdate.project_id} for deliverable update`);
+            setCurrentProjectId(deliverableToUpdate.project_id);
+            localStorage.setItem('princess_last_project_id', deliverableToUpdate.project_id);
+            
+            // Load the correct project data
+            await loadProjectData(deliverableToUpdate.project_id);
+            
+            // After loading correct project, try to find deliverable again
+            deliverableToUpdate = deliverables.find(d => d.id === deliverableId) || deliverableToUpdate;
+          }
+        }
+        
+        // Update local state optimistically
+        setDeliverables(prev => {
+          const exists = prev.some(d => d.id === deliverableId);
+          if (exists) {
+            return prev.map(d => d.id === deliverableId ? { ...d, ...updates } : d);
+          } else {
+            // Add the deliverable to the array if it's not there
+            console.log(`Adding deliverable ${deliverableId} to context array`);
+            return [...prev, { ...deliverableToUpdate, ...updates }];
+          }
+        });
+        
+        // Persist to backend with validation
+        const result = await SupabaseDeliverable.update(deliverableId, updates);
+        
+        if (!result) {
+          throw new Error('Update returned no result');
+        }
+        
+        // Handle linked stage updates
+        if (deliverableToUpdate?.stage_id) {
+          // Handle status sync
+          if (updates.status !== undefined) {
+            const stageStatusMap = {
+              'not_started': 'not_started',
+              'in_progress': 'in_progress',
+              'submitted': 'in_progress',
+              'declined': 'in_progress',
+              'approved': 'completed'
+            };
+            
+            const newStageStatus = stageStatusMap[updates.status];
+            if (newStageStatus) {
+              try {
+                await SupabaseStage.update(deliverableToUpdate.stage_id, { 
+                  status: newStageStatus 
+                });
+                
+                // Update local stage state
+                setStages(prev => prev.map(s => 
+                  s.id === deliverableToUpdate.stage_id 
+                    ? { ...s, status: newStageStatus }
+                    : s
+                ));
+              } catch (stageError) {
+                console.error('Failed to sync stage status:', stageError);
+                // Don't fail the whole operation if stage sync fails
+              }
+            }
+          }
+          
+          // Handle assignment sync
+          if (updates.assigned_to !== undefined) {
+            try {
+              await SupabaseStage.update(deliverableToUpdate.stage_id, { 
+                assigned_to: updates.assigned_to 
+              });
+              
+              // Update local stage state
+              setStages(prev => prev.map(s => 
+                s.id === deliverableToUpdate.stage_id 
+                  ? { ...s, assigned_to: updates.assigned_to }
+                  : s
+              ));
+            } catch (stageError) {
+              console.error('Failed to sync stage assignment:', stageError);
+              // Don't fail the whole operation if stage sync fails
+            }
+          }
+          
+          // Handle deadline sync
+          if (updates.deadline) {
+            const stage = stages.find(s => s.id === deliverableToUpdate.stage_id);
+            if (stage) {
+              try {
+                await updateStage(stage.id, { 
+                  end_date: updates.deadline 
+                });
+              } catch (stageError) {
+                console.error('Failed to sync stage deadline:', stageError);
+                // Don't fail the whole operation if stage sync fails
+              }
+            }
+          }
+        }
+        
+        // Broadcast change for real-time sync
+        broadcastChange('deliverable_update', { id: deliverableId, updates });
+        
+        // Notify subscribers
+        notifySubscribers('deliverable_updated', { id: deliverableId, updates });
+        
+        // Success!
+        if (!options.silent) {
+          toast.success('Deliverable updated successfully');
+        }
+        
+        console.log(`Successfully updated deliverable ${deliverableId} on attempt ${attempt}`);
+        return true;
+        
+      } catch (error) {
+        lastError = error;
+        console.error(`Update attempt ${attempt} failed for deliverable ${deliverableId}:`, error);
+        
+        if (attempt < maxRetries) {
+          // Exponential backoff
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
-      
-      // Broadcast change
-      broadcastChange('deliverable_update', { id: deliverableId, updates });
-      
-      // Notify subscribers
-      notifySubscribers('deliverable_updated', { id: deliverableId, updates });
-      
-      toast.success('Deliverable updated successfully');
-      return true;
-      
-    } catch (error) {
-      // console.error('Failed to update deliverable:', error);
-      toast.error('Failed to update deliverable');
-      return false;
     }
+    
+    // All retries failed
+    console.error(`Failed to update deliverable ${deliverableId} after ${maxRetries} attempts:`, lastError);
+    
+    if (!options.silent) {
+      toast.error(`Failed to update deliverable: ${lastError?.message || 'Unknown error'}`);
+    }
+    
+    // Try to revert optimistic update by reloading data
+    try {
+      console.log('Reverting optimistic update by reloading data...');
+      await loadProjectData(currentProjectId);
+    } catch (reloadError) {
+      console.error('Failed to reload data after update failure:', reloadError);
+    }
+    
+    return false;
   };
 
   /**

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { SupabaseDeliverable as Deliverable, SupabaseStage as Stage, SupabaseComment as Comment, SupabaseTeamMember as TeamMember } from "@/api/supabaseEntities";
+import { useProject } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,26 @@ import { motion } from "framer-motion";
 export default function DeliverableDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
+  
+  // Try to use ProjectContext but don't fail if it's not available
+  let projectContext = null;
+  let contextAvailable = false;
+  
+  try {
+    projectContext = useProject();
+    contextAvailable = true;
+  } catch (error) {
+    // ProjectContext not available, but that's okay - we can still load data directly
+    console.log('ProjectContext not available, running in standalone mode');
+  }
+  
+  const { 
+    updateDeliverable, 
+    deliverables: contextDeliverables, 
+    stages: contextStages,
+    currentProjectId,
+    switchProject 
+  } = projectContext || {};
   const [deliverable, setDeliverable] = useState(null);
   const [stage, setStage] = useState(null);
   const [comments, setComments] = useState([]);
@@ -91,36 +112,112 @@ export default function DeliverableDetail() {
     };
   }, [id]);
 
+  // Listen for context updates to sync real-time changes (only if context is available)
   useEffect(() => {
-    loadTeamMembers();
-  }, []);
+    if (projectContext && id && contextDeliverables) {
+      const updatedDeliverable = contextDeliverables.find(d => d.id === id);
+      if (updatedDeliverable && 
+          JSON.stringify(updatedDeliverable) !== JSON.stringify(deliverable)) {
+        // Sanitize versions before setting
+        const sanitizedDeliverable = {
+          ...updatedDeliverable,
+          versions: sanitizeVersionsArray(updatedDeliverable.versions)
+        };
+        setDeliverable(sanitizedDeliverable);
+        // Also update the stage if needed
+        if (updatedDeliverable.stage_id && contextStages) {
+          const updatedStage = contextStages.find(s => s.id === updatedDeliverable.stage_id);
+          if (updatedStage) {
+            setStage(updatedStage);
+          }
+        }
+      }
+    }
+  }, [contextDeliverables, contextStages, id, projectContext]);
 
-  const loadTeamMembers = async () => {
+  // Team members are now loaded in loadData after we have the project_id
+
+  // Sanitize status values to match current database enum
+  const sanitizeVersionStatus = (status) => {
+    const statusMap = {
+      'pending_approval': 'submitted',
+      'draft': 'not_started',
+      'wip': 'in_progress'
+    };
+    return statusMap[status] || status;
+  };
+
+  // Sanitize all versions in an array
+  const sanitizeVersionsArray = (versions) => {
+    if (!versions || !Array.isArray(versions)) return versions;
+    return versions.map(v => ({
+      ...v,
+      status: sanitizeVersionStatus(v.status)
+    }));
+  };
+
+  const loadTeamMembers = async (projectId) => {
     try {
-      const members = await TeamMember.list();
+      // Filter team members by project_id to avoid duplicates from other projects
+      const members = await TeamMember.filter({ project_id: projectId });
       setTeamMembers(members || []);
     } catch (error) {
       console.error("Failed to load team members:", error);
+      setTeamMembers([]);
     }
   };
 
-  const loadData = async (id) => {
+  const loadData = async (deliverableId) => {
     setIsLoading(true);
     try {
       const [deliverableData, commentsData] = await Promise.all([
-        Deliverable.get(id),
-        Comment.filter({ deliverable_id: id }, '-created_date')
+        Deliverable.get(deliverableId),
+        Comment.filter({ deliverable_id: deliverableId }, '-created_date')
       ]);
 
-      setDeliverable(deliverableData);
+      if (!deliverableData) {
+        console.error('Deliverable not found:', deliverableId);
+        setIsLoading(false);
+        return;
+      }
+
+      // Sanitize versions array to fix old enum values
+      const sanitizedDeliverable = {
+        ...deliverableData,
+        versions: sanitizeVersionsArray(deliverableData.versions)
+      };
+      
+      setDeliverable(sanitizedDeliverable);
       setComments(commentsData || []);
+      
+      // Ensure ProjectContext has the right project loaded
+      if (contextAvailable && deliverableData.project_id) {
+        if (currentProjectId !== deliverableData.project_id) {
+          console.log(`Project mismatch detected. Current: ${currentProjectId}, Deliverable's: ${deliverableData.project_id}`);
+          if (switchProject) {
+            console.log(`Switching to project ${deliverableData.project_id}...`);
+            try {
+              await switchProject(deliverableData.project_id);
+              console.log('Project switch successful');
+            } catch (error) {
+              console.error('Failed to switch project:', error);
+              // Continue anyway - we can still work without context
+            }
+          }
+        }
+      }
+      
+      // Load team members filtered by project to avoid duplicates
+      if (deliverableData.project_id) {
+        await loadTeamMembers(deliverableData.project_id);
+      }
 
       if (deliverableData?.stage_id) {
         const stageData = await Stage.get(deliverableData.stage_id);
         setStage(stageData);
       }
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error("Error loading deliverable data:", error);
     }
     setIsLoading(false);
   };
@@ -151,33 +248,132 @@ export default function DeliverableDetail() {
   };
 
   const handleStatusChange = async (newStatus) => {
+    if (!deliverable) {
+      console.error('No deliverable loaded');
+      return;
+    }
+
     setIsUpdatingStatus(true);
     setUpdateMessage(null);
-    try {
-      await Deliverable.update(deliverable.id, { status: newStatus });
-      setUpdateMessage({ 
-        type: 'success', 
-        text: `Deliverable status updated to ${newStatus.replace('_', ' ')}` 
-      });
-      
-      // Log the status change as a comment
-      await Comment.create({
-        deliverable_id: deliverable.id,
-        project_id: deliverable.project_id,
-        content: `Status changed to: ${newStatus.replace('_', ' ').toUpperCase()}`,
-        author_name: "Current User",
-        author_email: "user@deutschco.com",
-        log_type: "status_update"
-      });
-      
-      await loadData(deliverable.id);
-    } catch (error) {
-      console.error("Failed to update deliverable status:", error);
-      setUpdateMessage({ type: 'error', text: 'Failed to update status. Please try again.' });
+    
+    const maxRetries = 3;
+    let success = false;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Attempting to update status to ${newStatus} (attempt ${attempt}/${maxRetries})`);
+        
+        // Check if deliverable exists in context
+        const deliverableInContext = contextAvailable && contextDeliverables?.some(d => d.id === deliverable.id);
+        
+        // Try context update first if available and deliverable is in context
+        if (contextAvailable && updateDeliverable && deliverableInContext) {
+          console.log('Using context update method...');
+          success = await updateDeliverable(deliverable.id, { 
+            status: newStatus 
+          }, { 
+            maxRetries: 1,  // Don't retry within updateDeliverable since we're retrying here
+            silent: true 
+          });
+        }
+        
+        // Fallback to direct update if context update failed or unavailable
+        if (!success) {
+          console.log('Using direct update method...');
+          await Deliverable.update(deliverable.id, { status: newStatus });
+          
+          // Manually sync stage if needed
+          if (stage?.is_deliverable) {
+            const stageStatusMap = {
+              'not_started': 'not_started',
+              'in_progress': 'in_progress',
+              'submitted': 'in_progress',
+              'declined': 'in_progress',
+              'approved': 'completed'
+            };
+            
+            const newStageStatus = stageStatusMap[newStatus] || 'not_started';
+            console.log(`Syncing stage status to ${newStageStatus}...`);
+            
+            try {
+              await Stage.update(stage.id, { status: newStageStatus });
+            } catch (stageError) {
+              console.error('Failed to sync stage status:', stageError);
+              // Don't fail the whole operation if stage sync fails
+            }
+          }
+          
+          success = true;
+        }
+
+        if (success) {
+          console.log('Status update successful!');
+          
+          // Create audit log comment
+          try {
+            await Comment.create({
+              deliverable_id: deliverable.id,
+              project_id: deliverable.project_id,
+              content: `Status changed to: ${newStatus.replace('_', ' ').toUpperCase()}`,
+              author_name: "Current User",
+              author_email: "user@deutschco.com"
+            });
+          } catch (commentError) {
+            console.error('Failed to create audit comment:', commentError);
+            // Don't fail the whole operation if comment fails
+          }
+
+          // Reload data to ensure consistency
+          await loadData(deliverable.id);
+          
+          // Broadcast the update to other tabs/components
+          try {
+            const channel = new BroadcastChannel('deliverable-updates');
+            channel.postMessage({
+              type: 'status_updated',
+              deliverableId: deliverable.id,
+              projectId: deliverable.project_id,
+              newStatus: newStatus,
+              timestamp: Date.now()
+            });
+            channel.close();
+            console.log('[DeliverableDetail] Broadcasted status update');
+          } catch (broadcastError) {
+            console.error('[DeliverableDetail] Failed to broadcast update:', broadcastError);
+          }
+          
+          setUpdateMessage({ 
+            type: 'success', 
+            text: `Status updated to ${newStatus.replace('_', ' ')}` 
+          });
+          
+          break; // Success, exit retry loop
+        }
+      } catch (error) {
+        lastError = error;
+        console.error(`Status update attempt ${attempt} failed:`, error);
+        
+        if (attempt < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
+
+    if (!success) {
+      console.error('Failed to update status after all retries:', lastError);
+      setUpdateMessage({ 
+        type: 'error', 
+        text: 'Failed to update status. Please refresh and try again.' 
+      });
+    }
+
     setIsUpdatingStatus(false);
     
-    // Clear message after 3 seconds with cleanup
+    // Clear message after 3 seconds
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setUpdateMessage(null);
@@ -185,42 +381,115 @@ export default function DeliverableDetail() {
     }, 3000);
   };
 
-  const handleAssigneeChange = async (newAssigneeEmail) => {
+  const handleAssigneeChange = async (newAssigneeId) => {
+    if (!deliverable) {
+      console.error('No deliverable loaded');
+      return;
+    }
+
     setIsUpdatingAssignee(true);
     setUpdateMessage(null);
-    try {
-      const assigneeValue = newAssigneeEmail === "unassign" ? null : newAssigneeEmail;
-      await Deliverable.update(deliverable.id, { assigned_to: assigneeValue });
-      
-      const assignedMember = teamMembers.find(member => member.email === newAssigneeEmail);
-      const assigneeName = assignedMember ? assignedMember.name : "Unassigned";
-      
-      setUpdateMessage({ 
-        type: 'success', 
-        text: newAssigneeEmail === "unassign" ? 'Deliverable unassigned' : `Assigned to ${assigneeName}` 
-      });
-      
-      // Log the assignment change as a comment
-      const logMessage = newAssigneeEmail === "unassign" 
-        ? "Deliverable unassigned from team member"
-        : `Deliverable assigned to: ${assigneeName}`;
-      await Comment.create({
-        deliverable_id: deliverable.id,
-        project_id: deliverable.project_id,
-        content: logMessage,
-        author_name: "Current User",
-        author_email: "user@deutschco.com",
-        log_type: "status_update"
-      });
-      
-      await loadData(deliverable.id);
-    } catch (error) {
-      console.error("Failed to assign deliverable:", error);
-      setUpdateMessage({ type: 'error', text: 'Failed to update assignment. Please try again.' });
+    
+    const maxRetries = 3;
+    let success = false;
+    let lastError = null;
+    const assigneeValue = newAssigneeId === "unassign" ? null : newAssigneeId;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Attempting to update assignment (attempt ${attempt}/${maxRetries})`);
+        
+        // Check if deliverable exists in context
+        const deliverableInContext = contextAvailable && contextDeliverables?.some(d => d.id === deliverable.id);
+        
+        // Try context update first if available and deliverable is in context
+        if (contextAvailable && updateDeliverable && deliverableInContext) {
+          console.log('Using context update method for assignment...');
+          success = await updateDeliverable(deliverable.id, { 
+            assigned_to: assigneeValue 
+          }, { 
+            maxRetries: 1,
+            silent: true 
+          });
+        }
+        
+        // Fallback to direct update if context update failed or unavailable
+        if (!success) {
+          console.log('Using direct update method for assignment...');
+          await Deliverable.update(deliverable.id, { assigned_to: assigneeValue });
+          
+          // Manually sync stage if needed
+          if (stage?.is_deliverable) {
+            console.log('Syncing stage assignment...');
+            try {
+              await Stage.update(stage.id, { assigned_to: assigneeValue });
+            } catch (stageError) {
+              console.error('Failed to sync stage assignment:', stageError);
+              // Don't fail the whole operation if stage sync fails
+            }
+          }
+          
+          success = true;
+        }
+
+        if (success) {
+          console.log('Assignment update successful!');
+          
+          const assignedMember = teamMembers.find(member => member.id === newAssigneeId);
+          const assigneeName = assignedMember ? assignedMember.name : "Unassigned";
+          
+          // Create audit log comment
+          try {
+            const logMessage = newAssigneeId === "unassign" 
+              ? "Deliverable unassigned from team member"
+              : `Deliverable assigned to: ${assigneeName}`;
+              
+            await Comment.create({
+              deliverable_id: deliverable.id,
+              project_id: deliverable.project_id,
+              content: logMessage,
+              author_name: "Current User",
+              author_email: "user@deutschco.com"
+            });
+          } catch (commentError) {
+            console.error('Failed to create audit comment:', commentError);
+            // Don't fail the whole operation if comment fails
+          }
+
+          // Reload data to ensure consistency
+          await loadData(deliverable.id);
+          
+          setUpdateMessage({ 
+            type: 'success', 
+            text: newAssigneeId === "unassign" ? 'Deliverable unassigned' : `Assigned to ${assigneeName}` 
+          });
+          
+          break; // Success, exit retry loop
+        }
+      } catch (error) {
+        lastError = error;
+        console.error(`Assignment update attempt ${attempt} failed:`, error);
+        
+        if (attempt < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
+
+    if (!success) {
+      console.error('Failed to update assignment after all retries:', lastError);
+      setUpdateMessage({ 
+        type: 'error', 
+        text: 'Failed to update assignment. Please refresh and try again.' 
+      });
+    }
+
     setIsUpdatingAssignee(false);
     
-    // Clear message after 3 seconds with cleanup
+    // Clear message after 3 seconds
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       setUpdateMessage(null);
@@ -235,10 +504,16 @@ export default function DeliverableDetail() {
 
   const handleVersionUploadSubmit = async (versionData) => {
     try {
-      // Update deliverable with new version
-      const updatedVersions = [...(deliverable.versions || []), versionData];
+      // Create a new version in the deliverable_versions table
+      await Deliverable.createVersion(deliverable.id, {
+        ...versionData,
+        status: 'not_started',
+        created_at: new Date().toISOString(),
+        submitted_by: 'Current User'
+      });
+      
+      // Update the current_version field on the deliverable
       await Deliverable.update(deliverable.id, {
-        versions: updatedVersions,
         current_version: versionData.version_number
       });
       
@@ -269,22 +544,17 @@ export default function DeliverableDetail() {
     try {
       const version = deliverable.versions.find(v => v.id === versionId);
       
-      const updatedVersions = deliverable.versions.map(v => {
-        if (v.id === versionId) {
-          return {
-            ...v,
-            status: action === 'approve' ? 'approved' : 'declined',
-            feedback: feedback,
-            feedback_date: new Date().toISOString(),
-            feedback_by: 'Current User',
-            approval_date: action === 'approve' ? new Date().toISOString() : null,
-            approved_by: action === 'approve' ? 'Current User' : null
-          };
-        }
-        return v;
-      });
+      // Update the version in the deliverable_versions table
+      const updateData = {
+        status: action === 'approve' ? 'approved' : 'declined',
+        feedback: feedback,
+        feedback_date: new Date().toISOString(),
+        feedback_by: 'Current User',
+        approval_date: action === 'approve' ? new Date().toISOString() : null,
+        approved_by: action === 'approve' ? 'Current User' : null
+      };
       
-      await Deliverable.update(deliverable.id, { versions: updatedVersions });
+      await Deliverable.updateVersion(versionId, updateData);
       
       // Create notifications
       if (action === 'approve') {
@@ -318,18 +588,11 @@ export default function DeliverableDetail() {
     try {
       const version = deliverable.versions.find(v => v.id === versionId);
       
-      const updatedVersions = deliverable.versions.map(v => {
-        if (v.id === versionId) {
-          return {
-            ...v,
-            status: 'pending_approval',
-            submitted_date: new Date().toISOString()
-          };
-        }
-        return v;
+      // Update the version in the deliverable_versions table
+      await Deliverable.updateVersion(versionId, {
+        status: 'submitted',
+        submitted_date: new Date().toISOString()
       });
-      
-      await Deliverable.update(deliverable.id, { versions: updatedVersions });
       
       // Create notification for approval request
       await NotificationService.notifyApprovalRequest(deliverable, version);
@@ -445,7 +708,7 @@ export default function DeliverableDetail() {
       case 'approved':
       case 'completed': return 'bg-green-100 text-green-800 border-green-200';
       case 'submitted':
-      case 'wip': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'in_progress': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'needs_revision':
       case 'in_iterations': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-slate-100 text-slate-800 border-slate-200';
@@ -456,7 +719,7 @@ export default function DeliverableDetail() {
   const feedbackRoundsUsed = deliverable?.versions?.filter(v => v.status === 'needs_revision').length || 0;
   const remainingFeedbackRounds = (deliverable?.max_revisions || 0) - feedbackRoundsUsed;
   const getInitials = (name) => name.split(' ').map(n => n[0]).join('').toUpperCase();
-  const assignedMember = teamMembers.find(member => member.email === deliverable?.assigned_to);
+  const assignedMember = teamMembers.find(member => member.id === deliverable?.assigned_to);
 
   if (isLoading) {
     return <div className="p-8">Loading...</div>;
@@ -544,9 +807,10 @@ export default function DeliverableDetail() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="not_started">Not Started</SelectItem>
-                      <SelectItem value="wip">Work in Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="in_iterations">In Iterations</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="submitted">Submitted for Approval</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="declined">Declined</SelectItem>
                     </SelectContent>
                   </Select>
                   {isUpdatingStatus && <p className="text-xs text-slate-500">Updating status...</p>}
@@ -565,7 +829,7 @@ export default function DeliverableDetail() {
                     </SelectTrigger>
                     <SelectContent>
                       {teamMembers.map(member => (
-                        <SelectItem key={member.id} value={member.email}>
+                        <SelectItem key={member.id} value={member.id}>
                           <div className="flex items-center gap-2">
                             <Avatar className="w-5 h-5">
                               <AvatarImage src={member.profile_image} />
@@ -702,9 +966,9 @@ export default function DeliverableDetail() {
                   const getVersionStatusColor = (status) => {
                     switch (status) {
                       case 'approved': return 'bg-green-50 text-green-700 border-green-200';
-                      case 'pending_approval': return 'bg-amber-50 text-amber-700 border-amber-200';
+                      case 'submitted': return 'bg-amber-50 text-amber-700 border-amber-200';
                       case 'declined': return 'bg-red-50 text-red-700 border-red-200';
-                      case 'draft': 
+                      case 'not_started': 
                       default: return 'bg-gray-50 text-gray-700 border-gray-200';
                     }
                   };
@@ -767,8 +1031,8 @@ export default function DeliverableDetail() {
                             {(() => {
                               const versionStatus = latestVersion.status?.toLowerCase();
                               
-                              // Show Submit button for draft or declined versions
-                              if (versionStatus === 'draft' || versionStatus === 'declined') {
+                              // Show Submit button for not_started or declined versions
+                              if (versionStatus === 'not_started' || versionStatus === 'declined') {
                                 return (
                                   <Button 
                                     size="sm" 
@@ -782,7 +1046,7 @@ export default function DeliverableDetail() {
                               }
                               
                               // Show Approve/Decline buttons for submitted or pending approval
-                              if (versionStatus === 'submitted' || versionStatus === 'pending_approval') {
+                              if (versionStatus === 'submitted') {
                                 return (
                                   <>
                                     <Button 
@@ -1100,7 +1364,7 @@ export default function DeliverableDetail() {
               {/* Approval Finality Status */}
               <ApprovalFinality
                 isApproved={deliverable.is_final}
-                isPendingApproval={currentVersion?.status === 'submitted' || currentVersion?.status === 'pending_approval'}
+                isPendingApproval={currentVersion?.status === 'submitted'}
                 approvalDate={deliverable.iteration_history?.find(h => h.status === 'approved')?.date}
                 approvedBy={deliverable.iteration_history?.find(h => h.status === 'approved')?.feedback_by}
                 showWarning={!deliverable.is_final}

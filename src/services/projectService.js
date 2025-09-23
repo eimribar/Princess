@@ -369,7 +369,7 @@ class ProjectService {
           project_id: projectId,
           stage_id: stage.id,
           name: stage.name, // Use the actual stage name as deliverable name
-          status: 'draft', // Using draft as expected by deliverable enum
+          status: 'not_started',
           max_iterations: 3,
           current_iteration: 0
         }));

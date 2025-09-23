@@ -41,11 +41,11 @@ export default function VersionComparison({
     switch (status) {
       case 'approved':
         return { color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200', icon: CheckCircle2 };
-      case 'pending_approval':
+      case 'submitted':
         return { color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: Clock };
       case 'declined':
         return { color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: AlertTriangle };
-      case 'draft':
+      case 'not_started':
       default:
         return { color: 'text-gray-700', bg: 'bg-gray-50', border: 'border-gray-200', icon: FileText };
     }

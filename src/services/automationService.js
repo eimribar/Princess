@@ -81,7 +81,7 @@ class AutomationService {
         description: stage.description || `Deliverable for ${stage.name}`,
         category: stage.category,
         type: this.determineDeliverableType(stage.category),
-        status: 'draft',
+        status: 'not_started',
         max_iterations: 3,
         current_iteration: 0,
         original_deadline: stage.end_date,
@@ -136,8 +136,7 @@ class AutomationService {
         const newStageStatus = this.mapDeliverableToStageStatus(latestDeliverable.status);
         if (newStageStatus !== latestStage.status) {
           await SupabaseStage.update(stage.id, { 
-            status: newStageStatus,
-            _skipDeliverableSync: true
+            status: newStageStatus
           });
         }
       }
@@ -310,21 +309,20 @@ class AutomationService {
 
   static mapStageToDeliverableStatus(stageStatus) {
     const statusMap = {
-      'not_started': 'draft',
-      'not_ready': 'draft',
-      'in_progress': 'wip',
-      'blocked': 'draft',
+      'not_started': 'not_started',
+      'not_ready': 'not_started',
+      'in_progress': 'in_progress',
+      'blocked': 'not_started',
       'completed': 'approved'
     };
-    return statusMap[stageStatus] || 'draft';
+    return statusMap[stageStatus] || 'not_started';
   }
 
   static mapDeliverableToStageStatus(deliverableStatus) {
     const statusMap = {
-      'draft': 'not_started',
-      'wip': 'in_progress',
+      'not_started': 'not_started',
+      'in_progress': 'in_progress',
       'submitted': 'in_progress',
-      'pending_approval': 'in_progress',
       'declined': 'in_progress',
       'approved': 'completed'
     };

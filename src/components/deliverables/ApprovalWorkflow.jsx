@@ -62,12 +62,11 @@ export default function ApprovalWorkflow({
   const getApprovalStatus = () => {
     if (!currentVersion) return 'no_version';
     switch (currentVersion.status) {
-      case 'draft': return 'draft';
-      case 'submitted':
-      case 'pending_approval': return 'pending';
+      case 'not_started': return 'draft';
+      case 'submitted': return 'pending';
       case 'approved': return 'approved';
       case 'declined': return 'declined';
-      default: return 'draft';
+      default: return 'not_started';
     }
   };
 
@@ -173,7 +172,7 @@ export default function ApprovalWorkflow({
             </Alert>
           )}
 
-          {status === 'draft' && currentVersion && (
+          {status === 'not_started' && currentVersion && (
             <div className="space-y-4">
               <p className="text-gray-600">
                 Version {currentVersion.version_number} is ready to be submitted for approval.

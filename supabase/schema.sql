@@ -9,7 +9,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TYPE user_role AS ENUM ('admin', 'agency', 'client', 'viewer');
 CREATE TYPE team_type AS ENUM ('agency', 'client');
 CREATE TYPE stage_status AS ENUM ('not_ready', 'in_progress', 'blocked', 'completed');
-CREATE TYPE deliverable_status AS ENUM ('draft', 'submitted', 'pending_approval', 'approved', 'declined');
+-- Deliverable statuses: not_started, wip, submitted, approved, declined
+-- Note: draft and pending_approval are legacy values kept for backwards compatibility
+CREATE TYPE deliverable_status AS ENUM ('not_started', 'draft', 'wip', 'submitted', 'pending_approval', 'approved', 'declined');
 CREATE TYPE stage_category AS ENUM ('onboarding', 'research', 'strategy', 'brand_building', 'brand_collaterals', 'brand_activation');
 CREATE TYPE deadline_type AS ENUM ('fixed_date', 'relative_to_stage', 'relative_to_previous');
 CREATE TYPE blocking_priority AS ENUM ('low', 'medium', 'high', 'critical');

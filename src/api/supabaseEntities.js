@@ -121,7 +121,16 @@ class SupabaseEntity {
         .single();
       
       if (error) {
-        console.error(`Error updating ${this.tableName} ${id}:`, error);
+        console.error(`[SupabaseEntity] Error updating ${this.tableName} ${id}:`, {
+          error,
+          tableName: this.tableName,
+          id,
+          attemptedUpdates: cleanUpdates,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint,
+          errorCode: error.code
+        });
         throw error;
       }
       
@@ -251,9 +260,9 @@ class SupabaseEntity {
     }
     
     // Status value mappings
-    if (mapped.status === 'not_started') {
-      mapped.status = 'not_ready';
-    }
+    // Note: Removed not_started to not_ready mapping as it causes issues with deliverables
+    // Deliverables use 'not_started' but stages might use 'not_ready'
+    // Let each entity use its own valid status values
     
     // Use centralized date service for consistent date handling
     // Tables with DATE columns (not TIMESTAMP)
@@ -329,6 +338,32 @@ class ProjectEntity extends SupabaseEntity {
 class StageEntity extends SupabaseEntity {
   constructor() {
     super('stages');
+  }
+  
+  // Override to handle status mapping for stages
+  mapFieldsToSupabase(data) {
+    // First apply parent mapping
+    const mapped = super.mapFieldsToSupabase(data);
+    
+    // Map frontend status 'not_started' to database enum 'not_ready'
+    if (mapped.status === 'not_started') {
+      mapped.status = 'not_ready';
+    }
+    
+    return mapped;
+  }
+  
+  // Override to handle reverse status mapping
+  mapFieldsFromSupabase(data) {
+    // First apply parent mapping
+    const mapped = super.mapFieldsFromSupabase(data);
+    
+    // Map database enum 'not_ready' to frontend 'not_started'
+    if (mapped?.status === 'not_ready') {
+      mapped.status = 'not_started';
+    }
+    
+    return mapped;
   }
   
   async create(data) {
@@ -481,6 +516,8 @@ class StageEntity extends SupabaseEntity {
         .in('stage_id', stageIds);
       
       if (!error && dependencies) {
+        console.log(`Loading ${dependencies.length} dependencies for ${stages.length} stages`);
+        
         // Group dependencies by stage_id
         const depMap = {};
         dependencies.forEach(dep => {
@@ -494,6 +531,19 @@ class StageEntity extends SupabaseEntity {
         stages.forEach(stage => {
           stage.dependencies = depMap[stage.id] || [];
         });
+        
+        // Log stages with dependencies for debugging
+        const stagesWithDeps = stages.filter(s => s.dependencies && s.dependencies.length > 0);
+        console.log(`${stagesWithDeps.length} stages have dependencies`);
+        
+        // Check if stage 1 has any dependents
+        const stage1 = stages.find(s => s.number_index === 1);
+        if (stage1) {
+          const dependents = stages.filter(s => s.dependencies?.includes(stage1.id));
+          console.log(`Stage 1 has ${dependents.length} direct dependents:`, dependents.map(s => s.number_index));
+        }
+      } else if (error) {
+        console.error('Error loading dependencies:', error);
       }
     }
     
@@ -505,26 +555,130 @@ class DeliverableEntity extends SupabaseEntity {
   constructor() {
     super('deliverables');
   }
+
+  // Override get to include versions from separate table
+  async get(id) {
+    if (!this.useSupabase) {
+      throw new Error('Supabase is required');
+    }
+
+    try {
+      // Get the deliverable
+      const deliverable = await super.get(id);
+      
+      if (!deliverable) return null;
+      
+      // Load versions from deliverable_versions table
+      const { data: versions, error: versionsError } = await supabase
+        .from('deliverable_versions')
+        .select('*')
+        .eq('deliverable_id', id)
+        .order('created_at', { ascending: true });
+      
+      if (versionsError) {
+        console.error('Error loading deliverable versions:', versionsError);
+        // Return deliverable without versions rather than failing completely
+        return {
+          ...deliverable,
+          versions: []
+        };
+      }
+      
+      // Return deliverable with versions array
+      return {
+        ...deliverable,
+        versions: versions || []
+      };
+    } catch (error) {
+      console.error(`Failed to get deliverable ${id}:`, error);
+      throw error;
+    }
+  }
+
+  // Override filter to include versions
+  async filter(criteria = {}, orderBy = null) {
+    if (!this.useSupabase) {
+      throw new Error('Supabase is required');
+    }
+
+    try {
+      // Get deliverables using parent method
+      const deliverables = await super.filter(criteria, orderBy);
+      
+      if (!deliverables || deliverables.length === 0) {
+        return deliverables;
+      }
+      
+      // Get all deliverable IDs
+      const deliverableIds = deliverables.map(d => d.id);
+      
+      // Load all versions for these deliverables
+      const { data: allVersions, error: versionsError } = await supabase
+        .from('deliverable_versions')
+        .select('*')
+        .in('deliverable_id', deliverableIds)
+        .order('created_at', { ascending: true });
+      
+      if (versionsError) {
+        console.error('Error loading deliverable versions:', versionsError);
+        // Return deliverables without versions rather than failing
+        return deliverables.map(d => ({ ...d, versions: [] }));
+      }
+      
+      // Group versions by deliverable_id
+      const versionsByDeliverable = {};
+      (allVersions || []).forEach(version => {
+        if (!versionsByDeliverable[version.deliverable_id]) {
+          versionsByDeliverable[version.deliverable_id] = [];
+        }
+        versionsByDeliverable[version.deliverable_id].push(version);
+      });
+      
+      // Attach versions to deliverables
+      return deliverables.map(deliverable => ({
+        ...deliverable,
+        versions: versionsByDeliverable[deliverable.id] || []
+      }));
+    } catch (error) {
+      console.error('Failed to filter deliverables:', error);
+      throw error;
+    }
+  }
   
   async update(id, updates) {
-    // Get current deliverable to check status changes
-    const currentDeliverable = await this.get(id);
-    const result = await super.update(id, updates);
+    // Remove versions from updates if it exists (versions are in a separate table)
+    const { versions, ...cleanUpdates } = updates;
+    
+    // Get current deliverable to check status changes (without versions to avoid issues)
+    const { data: currentDeliverable, error } = await supabase
+      .from('deliverables')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) {
+      console.error('Failed to get current deliverable:', error);
+      throw error;
+    }
+    
+    // Update with clean data (no versions)
+    const result = await super.update(id, cleanUpdates);
     
     // If deliverable was approved, use AutomationService to handle it
-    if (updates.status === 'approved' && currentDeliverable?.status !== 'approved') {
+    if (cleanUpdates.status === 'approved' && currentDeliverable?.status !== 'approved') {
       await AutomationService.handleDeliverableApproval(result);
     }
     
     // If deliverable was declined, use AutomationService to handle it
-    if (updates.status === 'declined' && currentDeliverable?.status !== 'declined') {
+    if (cleanUpdates.status === 'declined' && currentDeliverable?.status !== 'declined') {
       // Pass feedback and declined_by safely - these fields might not exist yet
-      const feedback = updates.feedback || '';
-      const declinedBy = updates.declined_by || updates.declined_by_user || 'System';
+      const feedback = cleanUpdates.feedback || '';
+      const declinedBy = cleanUpdates.declined_by || cleanUpdates.declined_by_user || 'System';
       await AutomationService.handleDeliverableDecline(result, feedback, declinedBy);
     }
     
-    return result;
+    // Return the result with versions loaded
+    return await this.get(result.id);
   }
   
   // Method removed - now handled by AutomationService.handleDeliverableApproval
@@ -537,7 +691,7 @@ class DeliverableEntity extends SupabaseEntity {
       const versionData = {
         deliverable_id: deliverable.id,
         version_number: 'V0',
-        status: 'draft',
+        status: 'not_started',
         ...initialVersion
       };
       
@@ -552,11 +706,211 @@ class DeliverableEntity extends SupabaseEntity {
     
     return deliverable;
   }
+
+  // Version CRUD Operations
+  async getVersions(deliverableId) {
+    if (!this.useSupabase) {
+      // For localStorage, versions are stored directly on the deliverable
+      const deliverable = await this.get(deliverableId);
+      return deliverable?.versions || [];
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('deliverable_versions')
+        .select('*')
+        .eq('deliverable_id', deliverableId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch deliverable versions:', error);
+      return [];
+    }
+  }
+
+  async createVersion(deliverableId, versionData) {
+    if (!this.useSupabase) {
+      // For localStorage, update the deliverable with new version
+      const deliverable = await this.get(deliverableId);
+      if (!deliverable) throw new Error('Deliverable not found');
+      
+      const newVersion = {
+        id: `version_${Date.now()}`,
+        deliverable_id: deliverableId,
+        created_at: new Date().toISOString(),
+        ...versionData
+      };
+      
+      const updatedVersions = [...(deliverable.versions || []), newVersion];
+      await this.update(deliverableId, { versions: updatedVersions });
+      return newVersion;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('deliverable_versions')
+        .insert({
+          deliverable_id: deliverableId,
+          ...versionData
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Failed to create deliverable version:', error);
+      throw error;
+    }
+  }
+
+  async updateVersion(versionId, updates) {
+    if (!this.useSupabase) {
+      // For localStorage, find and update the version in the deliverable
+      const deliverables = await this.list();
+      for (const deliverable of deliverables) {
+        const versionIndex = (deliverable.versions || []).findIndex(v => v.id === versionId);
+        if (versionIndex !== -1) {
+          const updatedVersions = [...deliverable.versions];
+          updatedVersions[versionIndex] = {
+            ...updatedVersions[versionIndex],
+            ...updates,
+            updated_at: new Date().toISOString()
+          };
+          await this.update(deliverable.id, { versions: updatedVersions });
+          return updatedVersions[versionIndex];
+        }
+      }
+      throw new Error('Version not found');
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('deliverable_versions')
+        .update(updates)
+        .eq('id', versionId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Failed to update deliverable version:', error);
+      throw error;
+    }
+  }
+
+  async deleteVersion(versionId) {
+    if (!this.useSupabase) {
+      // For localStorage, find and remove the version from the deliverable
+      const deliverables = await this.list();
+      for (const deliverable of deliverables) {
+        const versionIndex = (deliverable.versions || []).findIndex(v => v.id === versionId);
+        if (versionIndex !== -1) {
+          const updatedVersions = deliverable.versions.filter(v => v.id !== versionId);
+          await this.update(deliverable.id, { versions: updatedVersions });
+          return true;
+        }
+      }
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('deliverable_versions')
+        .delete()
+        .eq('id', versionId);
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Failed to delete deliverable version:', error);
+      return false;
+    }
+  }
+
+  async getLatestVersion(deliverableId) {
+    const versions = await this.getVersions(deliverableId);
+    if (!versions || versions.length === 0) return null;
+    
+    // Sort by version_number (V0, V1, V2, etc.) or created_at
+    const sorted = versions.sort((a, b) => {
+      // Try to sort by version_number first
+      if (a.version_number && b.version_number) {
+        const aNum = parseInt(a.version_number.replace('V', ''));
+        const bNum = parseInt(b.version_number.replace('V', ''));
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          return bNum - aNum; // Descending order (latest first)
+        }
+      }
+      // Fall back to created_at
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    
+    return sorted[0];
+  }
 }
 
 class CommentEntity extends SupabaseEntity {
   constructor() {
     super('comments');
+  }
+  
+  mapToDatabase(data) {
+    const mapped = { ...data };
+    
+    // Map content to comment_text for database
+    if (mapped.content !== undefined) {
+      mapped.comment_text = mapped.content;
+      delete mapped.content;
+    }
+    
+    // Remove any non-existent fields
+    delete mapped.log_type;
+    
+    return mapped;
+  }
+  
+  mapFromDatabase(data) {
+    if (!data) return data;
+    
+    const mapped = { ...data };
+    
+    // Map comment_text to content for frontend
+    if (mapped.comment_text !== undefined) {
+      mapped.content = mapped.comment_text;
+    }
+    
+    return mapped;
+  }
+  
+  async create(data) {
+    const mappedData = this.mapToDatabase(data);
+    const result = await super.create(mappedData);
+    return this.mapFromDatabase(result);
+  }
+  
+  async update(id, updates) {
+    const mappedUpdates = this.mapToDatabase(updates);
+    const result = await super.update(id, mappedUpdates);
+    return this.mapFromDatabase(result);
+  }
+  
+  async get(id) {
+    const result = await super.get(id);
+    return this.mapFromDatabase(result);
+  }
+  
+  async list(orderBy) {
+    const results = await super.list(orderBy);
+    return results.map(item => this.mapFromDatabase(item));
+  }
+  
+  async filter(filters, orderBy) {
+    const results = await super.filter(filters, orderBy);
+    return results.map(item => this.mapFromDatabase(item));
   }
 }
 

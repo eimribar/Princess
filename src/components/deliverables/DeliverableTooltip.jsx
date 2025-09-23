@@ -24,11 +24,13 @@ export default function DeliverableTooltip({
   // Calculate position to avoid viewport edges
   const getTooltipPosition = () => {
     const tooltipWidth = 320;
-    const tooltipHeight = 200;
-    const padding = 10;
+    const tooltipHeight = 220; // Slightly larger to account for content
+    const padding = 20;
+    const stageSize = 48; // Approximate size of stage circle
     
-    let x = position.x;
-    let y = position.y - tooltipHeight - 20; // Default: above the star
+    // Start with centering the tooltip horizontally above the stage
+    let x = position.x - (tooltipWidth / 2);
+    let y = position.y - tooltipHeight - 15; // Default: above the stage
     
     // Check if tooltip would go off right edge
     if (x + tooltipWidth > window.innerWidth - padding) {
@@ -42,7 +44,20 @@ export default function DeliverableTooltip({
     
     // Check if tooltip would go off top edge
     if (y < padding) {
-      y = position.y + 60; // Show below instead
+      // Show below the stage instead
+      y = position.y + stageSize + 15;
+    }
+    
+    // Ensure we don't go off bottom edge when showing below
+    if (y + tooltipHeight > window.innerHeight - padding) {
+      // If we can't fit below either, show to the side
+      y = Math.max(padding, Math.min(position.y - tooltipHeight / 2, window.innerHeight - tooltipHeight - padding));
+      // Move to left of stage if there's more room there
+      if (position.x > window.innerWidth / 2) {
+        x = position.x - tooltipWidth - 20;
+      } else {
+        x = position.x + stageSize + 20;
+      }
     }
     
     return { x, y };
@@ -54,12 +69,11 @@ export default function DeliverableTooltip({
     switch (deliverable.status) {
       case 'approved':
         return <CheckCircle2 className="w-4 h-4 text-green-600" />;
-      case 'pending_approval':
       case 'submitted':
         return <Clock className="w-4 h-4 text-amber-600" />;
       case 'declined':
         return <XCircle className="w-4 h-4 text-red-600" />;
-      case 'wip':
+      case 'in_progress':
         return <TrendingUp className="w-4 h-4 text-blue-600" />;
       default:
         return <AlertCircle className="w-4 h-4 text-gray-600" />;
@@ -112,9 +126,9 @@ export default function DeliverableTooltip({
               <span className="text-xs font-medium text-gray-600">Status:</span>
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                 deliverable.status === 'approved' ? 'bg-green-100 text-green-700' :
-                deliverable.status === 'pending_approval' ? 'bg-amber-100 text-amber-700' :
+                deliverable.status === 'submitted' ? 'bg-amber-100 text-amber-700' :
                 deliverable.status === 'declined' ? 'bg-red-100 text-red-700' :
-                deliverable.status === 'wip' ? 'bg-blue-100 text-blue-700' :
+                deliverable.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
                 'bg-gray-100 text-gray-700'
               }`}>
                 {deliverable.status.replace('_', ' ').toUpperCase()}
@@ -195,10 +209,18 @@ export default function DeliverableTooltip({
             </div>
           </div>
 
-          {/* Arrow pointing down to the star */}
-          <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-2">
-            <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px] border-t-white"></div>
-          </div>
+          {/* Arrow pointing to the stage - positioned based on tooltip location */}
+          {tooltipPos.y < position.y ? (
+            // Arrow pointing down when tooltip is above
+            <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-2">
+              <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[8px] border-t-white"></div>
+            </div>
+          ) : tooltipPos.y > position.y + 100 ? (
+            // Arrow pointing up when tooltip is below
+            <div className="absolute left-1/2 transform -translate-x-1/2 -top-2">
+              <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[8px] border-b-white"></div>
+            </div>
+          ) : null}
         </motion.div>
       )}
     </AnimatePresence>

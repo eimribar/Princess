@@ -146,6 +146,19 @@ export const getAllDependentStages = (stageId, allStages, includeTransitive = tr
   };
   
   findDependents(stageId);
+  
+  // Debug logging
+  const stage = allStages.find(s => s.id === stageId);
+  if (stage?.number_index === 1) {
+    console.log('Getting dependents for stage 1:', {
+      stageId,
+      totalStages: allStages.length,
+      stagesWithDeps: allStages.filter(s => s.dependencies && s.dependencies.length > 0).length,
+      foundDependents: dependents.size,
+      dependentNumbers: Array.from(dependents).map(d => d.number_index)
+    });
+  }
+  
   return Array.from(dependents);
 };
 

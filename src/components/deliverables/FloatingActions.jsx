@@ -30,7 +30,7 @@ export default function FloatingActions({
 
   const versions = deliverable?.versions || [];
   const latestVersion = versions[versions.length - 1];
-  const hasPendingApproval = versions.some(v => v.status === 'pending_approval');
+  const hasPendingApproval = versions.some(v => v.status === 'submitted');
 
   const canUploadNewVersion = () => {
     if (versions.length === 0) return true;
@@ -89,7 +89,7 @@ export default function FloatingActions({
       label: 'Quick Approve',
       color: 'bg-green-600 hover:bg-green-700',
       onClick: () => {
-        const pendingVersion = versions.find(v => v.status === 'pending_approval');
+        const pendingVersion = versions.find(v => v.status === 'submitted');
         if (pendingVersion && onApprovalAction) {
           onApprovalAction(pendingVersion.id, 'approve', 'Quick approval via floating actions');
         }

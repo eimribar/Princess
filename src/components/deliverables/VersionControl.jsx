@@ -30,11 +30,10 @@ export default function VersionControl({ deliverable, onVersionUpload, onApprova
       case 'approved':
         return { color: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle2 };
       case 'submitted':
-      case 'pending_approval':
         return { color: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock };
       case 'declined':
         return { color: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle };
-      case 'draft':
+      case 'not_started':
       default:
         return { color: 'bg-gray-50 text-gray-700 border-gray-200', icon: FileText };
     }
@@ -130,7 +129,7 @@ export default function VersionControl({ deliverable, onVersionUpload, onApprova
                         </Button>
                       </>
                     )}
-                    {version.status === 'pending_approval' && onApprovalAction && (
+                    {version.status === 'submitted' && onApprovalAction && (
                       <>
                         <Button 
                           onClick={() => onApprovalAction(version.id, 'approve')}

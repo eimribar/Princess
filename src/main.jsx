@@ -14,6 +14,8 @@ import { fixMissingDeliverables } from '@/utils/fixMissingDeliverables';
 import { diagnoseStage } from '@/utils/diagnoseStage';
 // Import sync utility
 import { syncStageDeliverables } from '@/utils/syncStageDeliverables';
+// Import specific stages fix
+import { fixSpecificStages } from '@/utils/fixSpecificStages';
 
 // Check and clear demo data if it exists
 const checkAndClearDemoData = () => {

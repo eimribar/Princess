@@ -42,6 +42,17 @@ class StageManager {
         return [];
       }
       const stages = await Stage.filter({ project_id: projectId });
+      
+      // Debug: Log first few stages to check status values
+      const firstThreeStages = stages.slice(0, 3).map(s => ({
+        id: s.id,
+        number: s.number_index,
+        name: s.name,
+        status: s.status,
+        blocking_priority: s.blocking_priority
+      }));
+      console.log('Loaded stages from database:', firstThreeStages);
+      
       return stages.sort((a, b) => a.number_index - b.number_index);
     } catch (error) {
       console.error('Failed to load stages:', error);
@@ -57,6 +68,12 @@ class StageManager {
 
     let totalWeight = 0;
     let completedWeight = 0;
+    let debugInfo = {
+      totalStages: stages.length,
+      completedStages: 0,
+      inProgressStages: 0,
+      weights: []
+    };
 
     stages.forEach(stage => {
       // Weight stages by blocking priority
@@ -78,15 +95,38 @@ class StageManager {
       
       if (stage.status === 'completed') {
         completedWeight += weight;
+        debugInfo.completedStages++;
       } else if (stage.status === 'in_progress') {
         // Count in-progress as 50% complete
         completedWeight += (weight * 0.5);
+        debugInfo.inProgressStages++;
+      }
+      
+      // Log first few stages for debugging
+      if (stage.number_index <= 3) {
+        debugInfo.weights.push({
+          stage: stage.number_index,
+          name: stage.name,
+          status: stage.status,
+          priority: stage.blocking_priority || 'default',
+          weight: weight
+        });
       }
     });
 
     // Calculate percentage and ensure it's within 0-100 range
     const percentage = totalWeight > 0 ? (completedWeight / totalWeight) * 100 : 0;
-    return Math.max(0, Math.min(100, Math.round(percentage)));
+    const finalProgress = Math.max(0, Math.min(100, Math.round(percentage)));
+    
+    console.log('Progress Calculation Debug:', {
+      ...debugInfo,
+      totalWeight,
+      completedWeight,
+      calculatedPercentage: percentage,
+      finalProgress
+    });
+    
+    return finalProgress;
   }
 
   // Get stages that are ready to start (all dependencies met)
@@ -178,7 +218,6 @@ class StageManager {
       await Comment.create({
         stage_id: stageId,
         project_id: stage.project_id,
-        comment_text: `✅ Stage completed by ${completedBy}`,
         content: `✅ Stage completed by ${completedBy}`,
         author_name: 'System',
         author_email: 'system@princess.app',
@@ -272,7 +311,6 @@ class StageManager {
       await Comment.create({
         stage_id: stageId,
         project_id: stage.project_id,
-        comment_text: `🚀 Stage started by ${assignedTo}`,
         content: `🚀 Stage started by ${assignedTo}`,
         author_name: 'System',
         author_email: 'system@princess.app',
@@ -319,7 +357,6 @@ class StageManager {
           await Comment.create({
             stage_id: stage.id,
             project_id: stage.project_id,
-            comment_text: `🔓 Stage is now ready to start (dependencies completed)`,
             content: `🔓 Stage is now ready to start (dependencies completed)`,
             author_name: 'System',
             author_email: 'system@princess.app',
@@ -402,7 +439,9 @@ class StageManager {
           
         case 'not_started':
         case 'not_ready':
-          return await this.resetStage(stageId, reason || `Changed to ${newStatus} by ${changedBy}`, skipCascade);
+          // Pass forceChange directly to resetStage
+          // resetStage expects forceReset parameter to skip confirmation
+          return await this.resetStage(stageId, reason || `Changed to ${newStatus} by ${changedBy}`, forceChange);
           
         case 'blocked':
           // Update to blocked status
@@ -412,7 +451,6 @@ class StageManager {
           await Comment.create({
             stage_id: stageId,
             project_id: stage.project_id,
-            comment_text: `🚫 Stage blocked: ${reason || 'Dependencies not met'}`,
             content: `🚫 Stage blocked: ${reason || 'Dependencies not met'}`,
             author_name: 'System',
             author_email: 'system@princess.app',
@@ -527,7 +565,7 @@ class StageManager {
   }
 
   // Reset a stage back to not_started (rollback)
-  async resetStage(stageId, reason = 'Manual reset', skipCascade = false) {
+  async resetStage(stageId, reason = 'Manual reset', forceReset = false) {
     try {
       const stage = await Stage.get(stageId);
       if (!stage) {
@@ -539,11 +577,24 @@ class StageManager {
       // Evaluate cascade impact
       const impact = evaluateCascadeImpact(stageId, 'not_started', stages);
       
-      // If there are conflicts or warnings and cascade is not skipped, return impact for confirmation
-      if (!skipCascade && (impact.conflicts.length > 0 || impact.warnings.length > 0)) {
+      console.log('Reset stage - cascade impact evaluation:', {
+        stageId,
+        stageNumber: stage.number_index,
+        stageName: stage.name,
+        conflicts: impact.conflicts.length,
+        warnings: impact.warnings.length,
+        directlyAffected: impact.directlyAffected.length,
+        forceReset
+      });
+      
+      // If there are conflicts or warnings and NOT forcing, return impact for confirmation
+      if (!forceReset && (impact.conflicts.length > 0 || impact.warnings.length > 0)) {
+        console.log('Returning requiresConfirmation for cascade warning dialog');
         return {
           requiresConfirmation: true,
           impact,
+          stage,
+          newStatus: 'not_started',
           message: 'This change will affect dependent stages'
         };
       }
@@ -554,34 +605,30 @@ class StageManager {
         start_date: null,
       });
       
-      // Apply cascade blocking if not skipped
-      if (!skipCascade) {
-        const cascadeUpdates = await cascadeBlockDependents(stageId, stages, async (sid, updates) => {
-          await Stage.update(sid, updates);
-          
-          // Log blocking
-          const blockedStage = stages.find(s => s.id === sid);
-          if (blockedStage) {
-            await Comment.create({
-              stage_id: sid,
-              project_id: stage.project_id,
-              comment_text: `🚫 Stage blocked: dependency ${stage.name} was reset`,
-              content: `🚫 Stage blocked: dependency ${stage.name} was reset`,
-              author_name: 'System',
-              author_email: 'system@princess.app',
-              user_id: null,
-              is_internal: false,
-              created_date: new Date().toISOString()
-            });
-          }
-        });
-      }
+      // Always apply cascade blocking (we're past the confirmation check)
+      await cascadeBlockDependents(stageId, stages, async (sid, updates) => {
+        await Stage.update(sid, updates);
+        
+        // Log blocking
+        const blockedStage = stages.find(s => s.id === sid);
+        if (blockedStage) {
+          await Comment.create({
+            stage_id: sid,
+            project_id: stage.project_id,
+            content: `🚫 Stage blocked: dependency ${stage.name} was reset`,
+            author_name: 'System',
+            author_email: 'system@princess.app',
+            user_id: null,
+            is_internal: false,
+            created_date: new Date().toISOString()
+          });
+        }
+      });
 
       // Log reset
       await Comment.create({
         stage_id: stageId,
         project_id: stage.project_id,
-        comment_text: `🔄 Stage reset to not started. Reason: ${reason}`,
         content: `🔄 Stage reset to not started. Reason: ${reason}`,
         author_name: 'System',
         author_email: 'system@princess.app',

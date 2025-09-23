@@ -217,14 +217,14 @@ export async function initializeAppData() {
           {
             id: `v${stage.id}_1`,
             version_number: 'V0',
-            status: 'draft',
+            status: 'not_started',
             file_name: file.name,
             file_url: file.url,
             file_size: file.size,
             file_type: file.type,
             uploaded_date: new Date(baseDate.getTime() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours before base
             uploaded_by: 'Sarah Johnson',
-            changes_summary: 'Initial draft version for client review',
+            changes_summary: 'Initial version for client review',
             iteration_count: 1
           }
         ];
@@ -256,11 +256,11 @@ export async function initializeAppData() {
           versions[0].status = 'submitted';
           currentVersion = 'V0';
         } else if (index === 4) {
-          // 5th deliverable gets pending_approval status
-          versions[0].status = 'pending_approval';
+          // 5th deliverable gets submitted status
+          versions[0].status = 'submitted';
           currentVersion = 'V0';
         } else {
-          // Others stay as draft
+          // Others stay as not_started
           currentVersion = 'V0';
         }
       }
@@ -274,7 +274,7 @@ export async function initializeAppData() {
         include_in_brandbook: stage.category === 'brand_building' || 
                              stage.name.toLowerCase().includes('brandbook'),
         max_revisions: 2,
-        status: shouldHaveVersions ? (currentVersion === 'V1' ? 'completed' : 'wip') : 'not_started',
+        status: shouldHaveVersions ? (currentVersion === 'V1' ? 'approved' : 'in_progress') : 'not_started',
         versions: versions,
         current_version: currentVersion,
         max_iterations: 3,

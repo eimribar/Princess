@@ -16,7 +16,7 @@ export default function StatusIndicator({ deliverable, className = '' }) {
   const versions = deliverable?.versions || [];
   const totalVersions = versions.length;
   const approvedVersions = versions.filter(v => v.status === 'approved').length;
-  const pendingVersions = versions.filter(v => v.status === 'pending_approval').length;
+  const pendingVersions = versions.filter(v => v.status === 'submitted').length;
   const declinedVersions = versions.filter(v => v.status === 'declined').length;
   
   const progressPercent = totalVersions > 0 ? (approvedVersions / totalVersions) * 100 : 0;
@@ -29,7 +29,7 @@ export default function StatusIndicator({ deliverable, className = '' }) {
           icon: CheckCircle2,
           bgGradient: 'from-green-50 to-green-100'
         };
-      case 'wip':
+      case 'in_progress':
         return { 
           color: 'bg-blue-50 text-blue-700 border-blue-200', 
           icon: Upload,

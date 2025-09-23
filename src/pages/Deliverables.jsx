@@ -212,7 +212,7 @@ export default function Deliverables() {
   const getStatusColor = (status) => {
     switch (status) {
       case 'completed': return 'bg-green-50 text-green-700 border-green-200';
-      case 'wip': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'in_progress': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'in_iterations': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'not_started': return 'bg-gray-50 text-gray-700 border-gray-200';
       default: return 'bg-gray-100 text-gray-700 border-gray-200';
@@ -233,7 +233,7 @@ export default function Deliverables() {
       return false;
     }
     const latestVersion = deliverable.versions[deliverable.versions.length - 1];
-    return latestVersion?.status === 'pending_approval';
+    return latestVersion?.status === 'submitted';
   };
 
   const getVersionInfo = (deliverable) => {
@@ -253,7 +253,7 @@ export default function Deliverables() {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed': return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-      case 'wip': return <Clock className="w-4 h-4 text-blue-500" />;
+      case 'in_progress': return <Clock className="w-4 h-4 text-blue-500" />;
       case 'in_iterations': return <AlertTriangle className="w-4 h-4 text-amber-500" />;
       case 'not_started': return <Clock className="w-4 h-4 text-gray-400" />;
       default: return <Clock className="w-4 h-4 text-gray-400" />;
@@ -274,8 +274,8 @@ export default function Deliverables() {
   const deliverableStats = {
     total: deliverables.length,
     urgent: deliverables.filter(d => getActionRequired(d)).length,
-    in_progress: deliverables.filter(d => d.status === 'wip' || d.status === 'in_iterations').length,
-    completed: deliverables.filter(d => d.status === 'completed').length,
+    in_progress: deliverables.filter(d => d.status === 'in_progress').length,
+    completed: deliverables.filter(d => d.status === 'approved').length,
   };
 
   // Group deliverables by project phase based on step numbers
@@ -446,9 +446,10 @@ export default function Deliverables() {
             >
               <option value="all">All Statuses</option>
               <option value="not_started">Not Started</option>
-              <option value="wip">In Progress</option>
-              <option value="in_iterations">In Review</option>
-              <option value="completed">Completed</option>
+              <option value="in_progress">In Progress</option>
+              <option value="submitted">Submitted for Approval</option>
+              <option value="approved">Approved</option>
+              <option value="declined">Declined</option>
             </select>
           </div>
           <select 

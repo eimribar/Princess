@@ -10,7 +10,7 @@ import { Edit2, Check, Lock, AlertTriangle, Users, Info } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import stageManager from '@/api/stageManager';
 import { getDependencyStatus, canTransitionToStatus } from './DependencyUtils';
-import { SupabaseStage } from '@/api/supabaseEntities';
+import { SupabaseStage, SupabaseDeliverable } from '@/api/supabaseEntities';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,9 +23,21 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-export default function ProfessionalManagement({ stage, allStages, onStageUpdate, teamMembers, isReadOnly = false }) {
+export default function ProfessionalManagement({ stage, allStages, onStageUpdate, teamMembers, isReadOnly = false, deliverables = [] }) {
   const [dependencyStatus, setDependencyStatus] = useState('not_started');
-  const [selectedAssignee, setSelectedAssignee] = useState(stage?.assigned_to || 'unassigned');
+  // Find the associated deliverable for deliverable stages
+  const associatedDeliverable = stage?.is_deliverable ? 
+    deliverables?.find(d => d.id === stage.deliverable_id || d.stage_id === stage.id) : null;
+  
+  // Use deliverable's assigned_to for deliverable stages, otherwise use stage's assigned_to
+  const getInitialAssignee = () => {
+    if (stage?.is_deliverable && associatedDeliverable) {
+      return associatedDeliverable.assigned_to || 'unassigned';
+    }
+    return stage?.assigned_to || 'unassigned';
+  };
+  
+  const [selectedAssignee, setSelectedAssignee] = useState(getInitialAssignee());
   const [impactDialogOpen, setImpactDialogOpen] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState(null);
   const [cascadeImpact, setCascadeImpact] = useState(null);
@@ -39,14 +51,20 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
   }, [stage, allStages]);
 
   useEffect(() => {
-    setSelectedAssignee(stage?.assigned_to || 'unassigned');
-  }, [stage]);
+    setSelectedAssignee(getInitialAssignee());
+  }, [stage, associatedDeliverable]);
 
   const handleStatusChange = async (newStatus) => {
     try {
-      // First check if the transition is allowed
+      // STEP 1: Update UI immediately for responsiveness
+      const previousStatus = stage.status;
+      onStageUpdate && onStageUpdate(stage.id, { status: newStatus });
+      
+      // STEP 2: Quick validation check (synchronous)
       const validation = canTransitionToStatus(stage, newStatus, allStages);
       if (!validation.allowed) {
+        // Revert UI if validation fails
+        onStageUpdate && onStageUpdate(stage.id, { status: previousStatus });
         toast({
           title: "Cannot Change Status",
           description: validation.reason,
@@ -56,53 +74,87 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
         return;
       }
       
-      // Use the comprehensive status change handler
-      const result = await stageManager.changeStageStatus(stage.id, newStatus, {
-        changedBy: 'Current User',
-        forceChange: false
+      console.log('Changing stage status:', {
+        stageId: stage.id,
+        stageNumber: stage.number_index,
+        from: previousStatus,
+        to: newStatus
       });
       
-      // Check if confirmation is required
-      if (result.requiresConfirmation) {
-        setPendingStatusChange(newStatus);
-        setCascadeImpact(result.impact);
-        setImpactDialogOpen(true);
-        return;
-      }
-      
-      // Handle successful status change
-      if (result.changed) {
-        // Show appropriate toast based on status
-        if (newStatus === 'completed') {
-          const unblocked = result.impact?.directlyAffected?.filter(i => i.suggestedAction === 'unblock') || [];
-          toast({
-            title: "Stage Completed!",
-            description: unblocked.length > 0 
-              ? `${unblocked.length} dependent stages are now ready to start`
-              : "Stage has been completed",
-            duration: 3000,
-          });
-        } else if (newStatus === 'in_progress') {
-          toast({
-            title: "Stage Started",
-            description: `Work has begun on ${stage.name}`,
-            duration: 3000,
-          });
-        } else if (newStatus === 'not_started') {
-          const blocked = result.impact?.directlyAffected?.filter(i => i.suggestedAction === 'block') || [];
-          toast({
-            title: "Stage Reset",
-            description: blocked.length > 0
-              ? `Stage reset. ${blocked.length} dependent stages have been blocked`
-              : "Stage has been reset to not started",
-            duration: 3000,
-          });
+      // STEP 3: For backward transitions (completed → not_started), check cascade impact
+      if (previousStatus === 'completed' && newStatus === 'not_started') {
+        // Special handling for reset - need to check dependencies
+        const result = await stageManager.resetStage(stage.id, 'Manual reset', false);
+        
+        console.log('Reset stage result:', {
+          requiresConfirmation: result.requiresConfirmation,
+          impact: result.impact
+        });
+        
+        if (result.requiresConfirmation) {
+          // Revert UI and show cascade dialog
+          onStageUpdate && onStageUpdate(stage.id, { status: previousStatus });
+          setPendingStatusChange(newStatus);
+          setCascadeImpact(result.impact);
+          setImpactDialogOpen(true);
+          return;
+        }
+      } else {
+        // STEP 4: For other transitions, validate in background
+        const result = await stageManager.changeStageStatus(stage.id, newStatus, {
+          changedBy: 'Current User',
+          forceChange: false
+        });
+        
+        console.log('Change status result:', {
+          requiresConfirmation: result.requiresConfirmation,
+          changed: result.changed,
+          impact: result.impact
+        });
+        
+        // Check if confirmation is required
+        if (result.requiresConfirmation) {
+          // Revert UI and show dialog
+          onStageUpdate && onStageUpdate(stage.id, { status: previousStatus });
+          setPendingStatusChange(newStatus);
+          setCascadeImpact(result.impact);
+          setImpactDialogOpen(true);
+          return;
         }
         
-        // Update optimistically
-        onStageUpdate && onStageUpdate(stage.id, { status: newStatus });
+        // Handle successful status change
+        if (result.changed) {
+          // Show appropriate toast based on status
+          if (newStatus === 'completed') {
+            const unblocked = result.impact?.directlyAffected?.filter(i => i.suggestedAction === 'unblock') || [];
+            toast({
+              title: "Stage Completed!",
+              description: unblocked.length > 0 
+                ? `${unblocked.length} dependent stages are now ready to start`
+                : "Stage has been completed",
+              duration: 3000,
+            });
+          } else if (newStatus === 'in_progress') {
+            toast({
+              title: "Stage Started",
+              description: `Work has begun on ${stage.name}`,
+              duration: 3000,
+            });
+          } else if (newStatus === 'not_started') {
+            const blocked = result.impact?.directlyAffected?.filter(i => i.suggestedAction === 'block') || [];
+            toast({
+              title: "Stage Reset",
+              description: blocked.length > 0
+                ? `Stage reset. ${blocked.length} dependent stages have been blocked`
+                : "Stage has been reset to not started",
+              duration: 3000,
+            });
+          }
+        }
       }
     } catch (error) {
+      // On any error, revert the UI
+      onStageUpdate && onStageUpdate(stage.id, { status: stage.status });
       toast({
         title: "Error",
         description: error.message,
@@ -116,24 +168,36 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
     if (!pendingStatusChange) return;
     
     try {
-      // Force the change despite conflicts
-      const result = await stageManager.changeStageStatus(stage.id, pendingStatusChange, {
-        changedBy: 'Current User',
-        forceChange: true,
-        skipCascade: false
+      // Update UI immediately
+      const previousStatus = stage.status;
+      onStageUpdate && onStageUpdate(stage.id, { status: pendingStatusChange });
+      
+      // Determine which API method to use based on the transition
+      let result;
+      if (previousStatus === 'completed' && pendingStatusChange === 'not_started') {
+        // Use resetStage for backward transitions from completed
+        result = await stageManager.resetStage(stage.id, 'Manual reset with confirmation', true);
+      } else {
+        // Use changeStageStatus for other transitions
+        result = await stageManager.changeStageStatus(stage.id, pendingStatusChange, {
+          changedBy: 'Current User',
+          forceChange: true,
+          skipCascade: false
+        });
+      }
+      
+      // The change is already reflected in UI, just show success message
+      const newStatus = result?.stage?.status || result?.newStatus || pendingStatusChange;
+      
+      toast({
+        title: "Status Changed",
+        description: "Stage status has been updated with cascade effects applied",
+        duration: 3000,
       });
       
-      if (result.changed || result.stage) {
-        toast({
-          title: "Status Changed",
-          description: "Stage status has been updated with cascade effects applied",
-          duration: 3000,
-        });
-        
-        // Update optimistically
-        onStageUpdate && onStageUpdate(stage.id, { status: pendingStatusChange });
-      }
     } catch (error) {
+      // On error, revert the UI
+      onStageUpdate && onStageUpdate(stage.id, { status: stage.status });
       toast({
         title: "Error",
         description: error.message,
@@ -150,7 +214,18 @@ export default function ProfessionalManagement({ stage, allStages, onStageUpdate
   const handleAssigneeChange = async (value) => {
     try {
       const memberId = value === 'unassigned' ? null : value;
-      await SupabaseStage.update(stage.id, { assigned_to: memberId });
+      
+      // For deliverable stages, update the deliverable's assigned_to (single source of truth)
+      if (stage?.is_deliverable && associatedDeliverable) {
+        await SupabaseDeliverable.update(associatedDeliverable.id, { assigned_to: memberId });
+        
+        // Also update the stage to keep them in sync visually
+        await SupabaseStage.update(stage.id, { assigned_to: memberId });
+      } else {
+        // For non-deliverable stages, just update the stage
+        await SupabaseStage.update(stage.id, { assigned_to: memberId });
+      }
+      
       setSelectedAssignee(value);
       const member = teamMembers.find(m => m.id === memberId);
       toast({

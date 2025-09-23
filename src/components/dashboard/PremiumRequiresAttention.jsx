@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function PremiumRequiresAttention({ deliverables, outOfScopeRequests }) {
-  const pendingDeliverables = deliverables?.filter(d => d.status === 'pending_approval') || [];
+  const pendingDeliverables = deliverables?.filter(d => d.status === 'submitted') || [];
   const pendingRequests = outOfScopeRequests?.filter(r => r.status === 'pending') || [];
   const totalItems = pendingDeliverables.length + pendingRequests.length;
 
