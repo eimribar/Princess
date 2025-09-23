@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Version Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+        .info {
+            color: blue;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #log {
+            background: #f5f5f5;
+            padding: 10px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #ccc;
+        }
+        .log-entry.error {
+            border-left-color: red;
+            background: #fee;
+        }
+        .log-entry.success {
+            border-left-color: green;
+            background: #efe;
+        }
+        .log-entry.info {
+            border-left-color: blue;
+            background: #eef;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Version Upload - Debugging Tool</h1>
+    
+    <div class="test-section">
+        <h2>Step 1: Check Authentication</h2>
+        <button onclick="checkAuth()">Check Auth Status</button>
+        <div id="auth-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 2: Check Storage Bucket</h2>
+        <button onclick="checkBucket()">Check Storage Bucket</button>
+        <div id="bucket-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 3: Test File Upload</h2>
+        <input type="file" id="test-file" />
+        <button onclick="testUpload()">Test Upload to Storage</button>
+        <div id="upload-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 4: Test Database Insert</h2>
+        <button onclick="testDatabaseInsert()">Test Database Insert</button>
+        <div id="db-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Logs</h2>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <div id="log"></div>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+        
+        // Get Supabase config from environment - CORRECT PROJECT
+        const supabaseUrl = 'https://orpmntxrcdongxmetbrk.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ycG1udHhyY2Rvbmd4bWV0YnJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2NTI4OTMsImV4cCI6MjA3MzIyODg5M30.WVLaqSqstXkKczetwZ-T1m80fhsc6gUbzqDjqr2_Frs';
+        
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        window.clearLogs = function() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        window.checkAuth = async function() {
+            const resultDiv = document.getElementById('auth-result');
+            try {
+                log('Checking authentication status...');
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+                    log(`Auth error: ${error.message}`, 'error');
+                    return;
+                }
+                
+                if (session) {
+                    resultDiv.innerHTML = `<span class="success">✓ Authenticated as: ${session.user.email}</span>`;
+                    log(`Authenticated as: ${session.user.email}`, 'success');
+                    
+                    // Check user profile
+                    const { data: profile } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('id', session.user.id)
+                        .single();
+                    
+                    if (profile) {
+                        log(`User role: ${profile.role}`, 'info');
+                    }
+                } else {
+                    resultDiv.innerHTML = `<span class="error">✗ Not authenticated</span>`;
+                    log('Not authenticated', 'error');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+                log(`Unexpected error: ${error.message}`, 'error');
+            }
+        };
+
+        window.checkBucket = async function() {
+            const resultDiv = document.getElementById('bucket-result');
+            try {
+                log('Checking storage buckets...');
+                const { data: buckets, error } = await supabase.storage.listBuckets();
+                
+                if (error) {
+                    resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+                    log(`Bucket error: ${error.message}`, 'error');
+                    return;
+                }
+                
+                const deliverableBucket = buckets.find(b => b.name === 'deliverable-files');
+                
+                if (deliverableBucket) {
+                    resultDiv.innerHTML = `<span class="success">✓ Bucket 'deliverable-files' exists</span>`;
+                    log('Bucket exists', 'success');
+                } else {
+                    resultDiv.innerHTML = `<span class="info">Bucket 'deliverable-files' not found. Creating...</span>`;
+                    log('Creating bucket...', 'info');
+                    
+                    // Try to create bucket
+                    const { error: createError } = await supabase.storage.createBucket('deliverable-files', {
+                        public: true,
+                        fileSizeLimit: 52428800
+                    });
+                    
+                    if (createError) {
+                        log(`Failed to create bucket: ${createError.message}`, 'error');
+                    } else {
+                        log('Bucket created successfully', 'success');
+                        resultDiv.innerHTML = `<span class="success">✓ Bucket created successfully</span>`;
+                    }
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+                log(`Unexpected error: ${error.message}`, 'error');
+            }
+        };
+
+        window.testUpload = async function() {
+            const resultDiv = document.getElementById('upload-result');
+            const fileInput = document.getElementById('test-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                resultDiv.innerHTML = `<span class="error">Please select a file</span>`;
+                return;
+            }
+            
+            try {
+                log(`Uploading file: ${file.name} (${file.size} bytes)`);
+                
+                const timestamp = Date.now();
+                const filePath = `test/${timestamp}_${file.name}`;
+                
+                log(`File path: ${filePath}`);
+                
+                const { data, error } = await supabase.storage
+                    .from('deliverable-files')
+                    .upload(filePath, file);
+                
+                if (error) {
+                    resultDiv.innerHTML = `<span class="error">Upload error: ${error.message}</span>`;
+                    log(`Upload failed: ${error.message}`, 'error');
+                    log(`Error details: ${JSON.stringify(error)}`, 'error');
+                    return;
+                }
+                
+                // Get public URL
+                const { data: { publicUrl } } = supabase.storage
+                    .from('deliverable-files')
+                    .getPublicUrl(data.path);
+                
+                resultDiv.innerHTML = `
+                    <span class="success">✓ File uploaded successfully</span><br>
+                    <small>Path: ${data.path}</small><br>
+                    <small>URL: <a href="${publicUrl}" target="_blank">${publicUrl}</a></small>
+                `;
+                
+                log(`Upload successful: ${data.path}`, 'success');
+                log(`Public URL: ${publicUrl}`, 'info');
+                
+                // Store for database test
+                window.lastUploadedFile = {
+                    url: publicUrl,
+                    name: file.name,
+                    size: file.size,
+                    type: file.type
+                };
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+                log(`Unexpected error: ${error.message}`, 'error');
+            }
+        };
+
+        window.testDatabaseInsert = async function() {
+            const resultDiv = document.getElementById('db-result');
+            
+            try {
+                log('Testing database insert...');
+                
+                // Get first deliverable for testing
+                const { data: deliverables, error: fetchError } = await supabase
+                    .from('deliverables')
+                    .select('id, name')
+                    .limit(1);
+                
+                if (fetchError || !deliverables.length) {
+                    resultDiv.innerHTML = `<span class="error">No deliverables found for testing</span>`;
+                    log('No deliverables found', 'error');
+                    return;
+                }
+                
+                const deliverable = deliverables[0];
+                log(`Using deliverable: ${deliverable.name} (${deliverable.id})`, 'info');
+                
+                // Get current user
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                const testData = {
+                    deliverable_id: deliverable.id,
+                    version_number: `TEST_V${Date.now()}`,
+                    status: 'draft',
+                    file_url: window.lastUploadedFile?.url || 'https://example.com/test.pdf',
+                    file_name: window.lastUploadedFile?.name || 'test.pdf',
+                    file_size: window.lastUploadedFile?.size || 1024,
+                    file_type: window.lastUploadedFile?.type || 'application/pdf',
+                    notes: 'Test upload from debugging tool',
+                    admin: session?.user?.email || 'test@example.com',
+                    admin_role: 'admin'
+                };
+                
+                log(`Inserting data: ${JSON.stringify(testData, null, 2)}`, 'info');
+                
+                const { data, error } = await supabase
+                    .from('deliverable_versions')
+                    .insert(testData)
+                    .select()
+                    .single();
+                
+                if (error) {
+                    resultDiv.innerHTML = `<span class="error">Insert error: ${error.message}</span>`;
+                    log(`Insert failed: ${error.message}`, 'error');
+                    log(`Error details: ${JSON.stringify(error)}`, 'error');
+                    
+                    // Check column names
+                    if (error.message.includes('column')) {
+                        log('Checking table schema...', 'info');
+                        const { data: columns } = await supabase.rpc('get_table_columns', {
+                            table_name: 'deliverable_versions'
+                        }).catch(() => ({ data: null }));
+                        
+                        if (columns) {
+                            log(`Table columns: ${columns.join(', ')}`, 'info');
+                        }
+                    }
+                    
+                    return;
+                }
+                
+                resultDiv.innerHTML = `<span class="success">✓ Version inserted successfully<br>ID: ${data.id}</span>`;
+                log(`Insert successful: ${data.id}`, 'success');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+                log(`Unexpected error: ${error.message}`, 'error');
+                console.error('Full error:', error);
+            }
+        };
+
+        // Auto-check auth on load
+        window.addEventListener('load', () => {
+            log('Test tool loaded', 'info');
+            checkAuth();
+        });
+    </script>
+</body>
+</html>

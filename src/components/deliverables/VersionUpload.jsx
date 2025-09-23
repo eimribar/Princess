@@ -19,6 +19,7 @@ import {
   Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import storageService from '../../services/storageService';
 
 export default function VersionUpload({ 
   deliverable, 
@@ -119,28 +120,42 @@ export default function VersionUpload({
     }
 
     try {
-      // Simulate file upload progress
-      for (let i = 0; i <= 100; i += 10) {
-        setUploadProgress(i);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
+      // Start upload progress
+      setUploadProgress(10);
+
+      // Calculate version number
+      const calculatedVersionNumber = versionNumber || `V${deliverable.versions ? deliverable.versions.length + 1 : 1}`;
+      
+      // Upload file to Supabase Storage
+      console.log('Uploading file to storage...');
+      setUploadProgress(30);
+      
+      const { url, path } = await storageService.uploadFile(
+        selectedFile,
+        deliverable.id,
+        calculatedVersionNumber
+      );
+      
+      setUploadProgress(70);
+      console.log('File uploaded, URL:', url);
 
       const versionData = {
-        id: Date.now().toString(),
-        version_number: versionNumber,
-        status: 'not_started',
-        file_url: URL.createObjectURL(selectedFile), // In real app, this would be the uploaded file URL
+        version_number: calculatedVersionNumber,
+        file_url: url,
         file_name: selectedFile.name,
         file_size: selectedFile.size,
-        uploaded_date: new Date().toISOString(),
-        uploaded_by: 'Current User',
+        file_type: selectedFile.type,
         changes_summary: changesSummary,
-        iteration_count: deliverable.versions ? deliverable.versions.length + 1 : 1
+        storage_path: path // Store the path for potential deletion later
       };
 
+      setUploadProgress(90);
+      
       if (onUpload) {
         await onUpload(versionData);
       }
+
+      setUploadProgress(100);
 
       // Reset form
       setSelectedFile(null);
@@ -148,7 +163,9 @@ export default function VersionUpload({
       setUploadProgress(0);
       
     } catch (error) {
-      setValidationError('Failed to upload file. Please try again.');
+      console.error('Upload error:', error);
+      setValidationError(`Failed to upload file: ${error.message}`);
+      setUploadProgress(0);
     }
   };
 

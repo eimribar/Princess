@@ -260,9 +260,7 @@ class SupabaseEntity {
     }
     
     // Status value mappings
-    // Note: Removed not_started to not_ready mapping as it causes issues with deliverables
-    // Deliverables use 'not_started' but stages might use 'not_ready'
-    // Let each entity use its own valid status values
+    // Both stages and deliverables now use 'not_started' consistently
     
     // Use centralized date service for consistent date handling
     // Tables with DATE columns (not TIMESTAMP)
@@ -311,11 +309,7 @@ class SupabaseEntity {
       mapped.order_index = mapped.number_index;
     }
     
-    // Status value mappings
-    if (mapped.status === 'not_ready') {
-      // Keep as not_ready for consistency with new convention
-      // The app should use not_ready going forward
-    }
+    // No status mapping needed - all entities use consistent status values
     
     return mapped;
   }
@@ -340,31 +334,8 @@ class StageEntity extends SupabaseEntity {
     super('stages');
   }
   
-  // Override to handle status mapping for stages
-  mapFieldsToSupabase(data) {
-    // First apply parent mapping
-    const mapped = super.mapFieldsToSupabase(data);
-    
-    // Map frontend status 'not_started' to database enum 'not_ready'
-    if (mapped.status === 'not_started') {
-      mapped.status = 'not_ready';
-    }
-    
-    return mapped;
-  }
-  
-  // Override to handle reverse status mapping
-  mapFieldsFromSupabase(data) {
-    // First apply parent mapping
-    const mapped = super.mapFieldsFromSupabase(data);
-    
-    // Map database enum 'not_ready' to frontend 'not_started'
-    if (mapped?.status === 'not_ready') {
-      mapped.status = 'not_started';
-    }
-    
-    return mapped;
-  }
+  // No status mapping needed anymore - database and frontend both use 'not_started'
+  // Run the SQL migration in RUN_THIS_STATUS_FIX.sql to update the database
   
   async create(data) {
     // Create the stage first
@@ -749,6 +720,11 @@ class DeliverableEntity extends SupabaseEntity {
     }
 
     try {
+      console.log('Creating version with data:', {
+        deliverable_id: deliverableId,
+        ...versionData
+      });
+      
       const { data, error } = await supabase
         .from('deliverable_versions')
         .insert({
@@ -758,10 +734,16 @@ class DeliverableEntity extends SupabaseEntity {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error details:', error);
+        throw error;
+      }
+      
+      console.log('Version created successfully:', data);
       return data;
     } catch (error) {
       console.error('Failed to create deliverable version:', error);
+      console.error('Error details:', error.message, error.details, error.hint);
       throw error;
     }
   }
@@ -914,6 +896,98 @@ class CommentEntity extends SupabaseEntity {
   }
 }
 
+class TemplateEntity extends SupabaseEntity {
+  constructor() {
+    super('playbook_templates');
+  }
+  
+  mapToDatabase(data) {
+    const mapped = { ...data };
+    
+    // Convert frontend template structure to database structure
+    if (mapped.stages) {
+      mapped.stages_data = mapped.stages;
+      delete mapped.stages;
+    }
+    
+    if (mapped.dependencies) {
+      mapped.dependencies_data = mapped.dependencies;
+      delete mapped.dependencies;
+    }
+    
+    // Map frontend fields to database fields
+    if (mapped.isDefault !== undefined) {
+      mapped.is_active = !mapped.isDefault; // Default templates are not editable
+      delete mapped.isDefault;
+    }
+    
+    if (mapped.stageCount !== undefined) {
+      if (!mapped.settings) mapped.settings = {};
+      mapped.settings.stageCount = mapped.stageCount;
+      delete mapped.stageCount;
+    }
+    
+    if (mapped.phases !== undefined) {
+      if (!mapped.settings) mapped.settings = {};
+      mapped.settings.phases = mapped.phases;
+      delete mapped.phases;
+    }
+    
+    if (mapped.lastModified !== undefined) {
+      mapped.updated_at = mapped.lastModified;
+      delete mapped.lastModified;
+    }
+    
+    if (mapped.createdBy !== undefined) {
+      // For now, we'll store this in settings since we don't have user context
+      if (!mapped.settings) mapped.settings = {};
+      mapped.settings.createdBy = mapped.createdBy;
+      delete mapped.createdBy;
+    }
+    
+    return mapped;
+  }
+  
+  mapFromDatabase(data) {
+    if (!data) return null;
+    const mapped = { ...data };
+    
+    // Convert database structure to frontend structure
+    if (mapped.stages_data !== undefined) {
+      mapped.stages = mapped.stages_data;
+      delete mapped.stages_data;
+    }
+    
+    if (mapped.dependencies_data !== undefined) {
+      mapped.dependencies = mapped.dependencies_data;
+      delete mapped.dependencies_data;
+    }
+    
+    // Map database fields to frontend fields
+    if (mapped.is_active !== undefined) {
+      mapped.isDefault = !mapped.is_active; // If not active, it's a default template
+    }
+    
+    if (mapped.settings) {
+      if (mapped.settings.stageCount !== undefined) {
+        mapped.stageCount = mapped.settings.stageCount;
+      }
+      if (mapped.settings.phases !== undefined) {
+        mapped.phases = mapped.settings.phases;
+      }
+      if (mapped.settings.createdBy !== undefined) {
+        mapped.createdBy = mapped.settings.createdBy;
+      }
+    }
+    
+    if (mapped.updated_at !== undefined) {
+      mapped.lastModified = mapped.updated_at;
+    }
+    
+    return mapped;
+  }
+}
+
 class NotificationEntity extends SupabaseEntity {
   constructor() {
     super('notifications');
@@ -937,11 +1011,7 @@ class OutOfScopeRequestEntity extends SupabaseEntity {
   }
 }
 
-class PlaybookTemplateEntity extends SupabaseEntity {
-  constructor() {
-    super('playbook_templates');
-  }
-  
+class PlaybookTemplateEntity extends TemplateEntity {
   async getDefaultTemplate() {
     const templates = await this.filter({ is_active: true });
     return templates[0] || null;

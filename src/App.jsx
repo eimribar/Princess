@@ -14,7 +14,7 @@ import ProjectRedirect from '@/components/ProjectRedirect'
 // Pages
 import Dashboard from '@/pages/Dashboard'
 import Deliverables from '@/pages/Deliverables'
-import DeliverableDetail from '@/pages/DeliverableDetail'
+import DeliverableDetailV2 from '@/pages/DeliverableDetailV2'
 import Team from '@/pages/Team'
 import Timeline from '@/pages/Timeline'
 import Brandbook from '@/pages/Brandbook'
@@ -72,7 +72,7 @@ function AppRoutes() {
               <Route path="dashboard" element={<ProjectRedirect />} />
               <Route path="dashboard/:projectId" element={<Dashboard />} />
               <Route path="deliverables" element={<Deliverables />} />
-              <Route path="deliverables/:id" element={<DeliverableDetail />} />
+              <Route path="deliverables/:id" element={<DeliverableDetailV2 />} />
               <Route path="team" element={<Team />} />
               <Route path="timeline" element={<Timeline />} />
               <Route path="brandbook" element={<Brandbook />} />
