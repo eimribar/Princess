@@ -477,44 +477,69 @@ class StageEntity extends SupabaseEntity {
     
     // If we have stages and Supabase is available, load dependencies
     if (stages && stages.length > 0 && this.useSupabase) {
-      // Get all stage IDs
+      // Get all stage IDs and their project ID
       const stageIds = stages.map(s => s.id);
+      const projectId = stages[0].project_id; // All stages should have same project_id
       
-      // Load all dependencies for these stages
-      const { data: dependencies, error } = await supabase
+      // CRITICAL FIX: Load dependencies AND validate they belong to same project
+      // First, get all dependencies for these stages
+      const { data: dependencies, error: depError } = await supabase
         .from('stage_dependencies')
         .select('stage_id, depends_on_stage_id')
         .in('stage_id', stageIds);
       
-      if (!error && dependencies) {
-        console.log(`Loading ${dependencies.length} dependencies for ${stages.length} stages`);
+      if (!depError && dependencies) {
+        // Now validate that all depends_on_stage_id belong to same project
+        const dependsOnIds = [...new Set(dependencies.map(d => d.depends_on_stage_id))];
         
-        // Group dependencies by stage_id
-        const depMap = {};
-        dependencies.forEach(dep => {
-          if (!depMap[dep.stage_id]) {
-            depMap[dep.stage_id] = [];
+        if (dependsOnIds.length > 0) {
+          // Get stages for dependency validation
+          const { data: dependencyStages, error: stageError } = await supabase
+            .from('stages')
+            .select('id, project_id')
+            .in('id', dependsOnIds);
+          
+          if (!stageError && dependencyStages) {
+            // Create map of stage_id to project_id for validation
+            const stageProjectMap = new Map(dependencyStages.map(s => [s.id, s.project_id]));
+            
+            // Filter dependencies to only include same-project dependencies
+            const validDependencies = dependencies.filter(dep => {
+              const depProjectId = stageProjectMap.get(dep.depends_on_stage_id);
+              return depProjectId === projectId;
+            });
+            
+            console.log(`Loading ${validDependencies.length} valid dependencies (filtered from ${dependencies.length}) for ${stages.length} stages in project ${projectId}`);
+            
+            // Group valid dependencies by stage_id
+            const depMap = {};
+            validDependencies.forEach(dep => {
+              if (!depMap[dep.stage_id]) {
+                depMap[dep.stage_id] = [];
+              }
+              depMap[dep.stage_id].push(dep.depends_on_stage_id);
+            });
+            
+            // Attach dependencies to stages
+            stages.forEach(stage => {
+              stage.dependencies = depMap[stage.id] || [];
+            });
+            
+            // Log stages with dependencies for debugging
+            const stagesWithDeps = stages.filter(s => s.dependencies && s.dependencies.length > 0);
+            console.log(`${stagesWithDeps.length} stages have dependencies in project ${projectId}`);
+          } else if (stageError) {
+            console.error('Error validating dependencies:', stageError);
           }
-          depMap[dep.stage_id].push(dep.depends_on_stage_id);
-        });
-        
-        // Attach dependencies to stages
-        stages.forEach(stage => {
-          stage.dependencies = depMap[stage.id] || [];
-        });
-        
-        // Log stages with dependencies for debugging
-        const stagesWithDeps = stages.filter(s => s.dependencies && s.dependencies.length > 0);
-        console.log(`${stagesWithDeps.length} stages have dependencies`);
-        
-        // Check if stage 1 has any dependents
-        const stage1 = stages.find(s => s.number_index === 1);
-        if (stage1) {
-          const dependents = stages.filter(s => s.dependencies?.includes(stage1.id));
-          console.log(`Stage 1 has ${dependents.length} direct dependents:`, dependents.map(s => s.number_index));
+        } else {
+          // No dependencies to validate, attach empty arrays
+          stages.forEach(stage => {
+            stage.dependencies = [];
+          });
+          console.log('No dependencies found for these stages');
         }
-      } else if (error) {
-        console.error('Error loading dependencies:', error);
+      } else if (depError) {
+        console.error('Error loading dependencies:', depError);
       }
     }
     

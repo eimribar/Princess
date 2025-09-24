@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import dataService from "@/services/dataService";
 import stageManager from "@/api/stageManager";
@@ -8,17 +8,17 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useUser } from "@/contexts/SupabaseUserContext";
 import dataFilterService from "@/services/dataFilterService";
 import { useAbortableRequest } from "@/services/abortableRequest";
+import { debounce } from 'lodash';
 
-import ProjectHeader from "../components/dashboard/ProjectHeader";
 import VisualTimeline from "../components/dashboard/VisualTimeline";
 import PremiumRequiresAttention from "../components/dashboard/PremiumRequiresAttention";
 import PremiumDeliverablesStatus from "../components/dashboard/PremiumDeliverablesStatus";
 import StageSidebarV2 from "../components/dashboard/StageSidebarV2";
-import OutOfScopeForm from "../components/dashboard/OutOfScopeForm";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, AlertCircle, Info } from "lucide-react";
+import { Loader2, AlertCircle, Info, CalendarDays } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { differenceInDays } from "date-fns";
 
 export default function Dashboard() {
   // Get project ID from URL if present
@@ -52,7 +52,6 @@ export default function Dashboard() {
   const [teamMembers, setTeamMembers] = useState(contextTeamMembers);
   const [outOfScopeRequests, setOutOfScopeRequests] = useState([]);
   const [selectedStageId, setSelectedStageId] = useState(null);
-  const [isOutOfScopeFormOpen, setIsOutOfScopeFormOpen] = useState(false);
   const [realProgress, setRealProgress] = useState(0);
   const [lastNotificationTime, setLastNotificationTime] = useState(0);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
@@ -197,46 +196,36 @@ export default function Dashboard() {
     // Load comments (not loaded by ProjectContext)
     loadComments();
 
-    // Subscribe to stage manager changes for real-time updates
+    // Subscribe to stage manager changes for NOTIFICATIONS ONLY
+    // NO DATA RELOADS - trust the optimistic updates from ProjectContext
     const unsubscribe = stageManager.subscribe(async (changes) => {
       
-      // Only show notifications for user-initiated actions, not data reloads
+      // Only show notifications for user-initiated actions
       if (changes.isUserAction !== false) {
         // Show toast notification for stage changes with auto-dismiss
         if (changes.type === 'stage_completed') {
           toast({
             title: "Stage Completed!",
-            description: `${changes.stage.name} has been completed. Progress updated to ${changes.newProgress}%`,
-            duration: 3000, // Auto-dismiss after 3 seconds
+            description: `${changes.stage.name} has been completed.`,
+            duration: 3000,
           });
+          
+          // Calculate progress locally without database query
+          const completedCount = stages.filter(s => s.status === 'completed').length + 1;
+          const newProgress = Math.round((completedCount / stages.length) * 100);
+          setRealProgress(newProgress);
+          
         } else if (changes.type === 'stage_started') {
           toast({
             title: "Stage Started",
             description: `Work has begun on ${changes.stage.name}`,
-            duration: 3000, // Auto-dismiss after 3 seconds
+            duration: 3000,
           });
         }
       }
-
-      // Only reload stages and progress, not everything
-      // FIXED: Use project-filtered stages instead of ALL stages
-      const currentProjectId = projectId || project?.id;
-      if (!currentProjectId) return;
       
-      const [stagesData, projectData] = await Promise.all([
-        dataService.getProjectStages(currentProjectId, 'number_index'),
-        dataService.getProject(currentProjectId)
-      ]);
-      setStages(stagesData || []);
-      if (projectData) {
-        setProject(projectData);
-      }
-      
-      // Update real progress with project filtering
-      if (currentProjectId) {
-        const progress = await stageManager.calculateRealProgress(currentProjectId);
-        setRealProgress(progress);
-      }
+      // NO DATA RELOADS - removed all the database queries
+      // The ProjectContext handles all state updates optimistically
     });
 
     // Cleanup function
@@ -249,11 +238,24 @@ export default function Dashboard() {
     };
   }, [loadData, toast, lastNotificationTime, projectId]);
 
-  const calculateProjectProgress = () => {
-    return realProgress; // Use intelligent progress calculation from stage manager
-  };
+  // Debounced progress calculation for performance
+  const calculateProjectProgress = useMemo(
+    () => debounce(() => {
+      if (stages.length === 0) return 0;
+      const completedCount = stages.filter(s => s.status === 'completed').length;
+      const progress = Math.round((completedCount / stages.length) * 100);
+      setRealProgress(progress);
+      return progress;
+    }, 300),
+    [stages]
+  );
+  
+  // Trigger progress calculation when stages change
+  useEffect(() => {
+    calculateProjectProgress();
+  }, [stages, calculateProjectProgress]);
 
-  const projectProgress = calculateProjectProgress();
+  const projectProgress = realProgress;
 
   const handleStageClick = (stageId) => {
     setSelectedStageId(stageId);
@@ -281,42 +283,31 @@ export default function Dashboard() {
   };
 
   const handleStageUpdate = async (stageId, updates) => {
-    // Use optimistic update for smooth UX without page jumps
+    // Use optimistic update for instant UI response
     if (stageId && updates) {
-      // Use optimistic update for immediate UI response
+      // Use optimistic update - NO RELOADS
       await updateStageOptimistic(stageId, updates);
       
-      // Recalculate progress immediately after status change
-      if (updates.status && currentProjectId) {
-        // Calculate new progress based on updated stages
-        const newProgress = await stageManager.calculateRealProgress(currentProjectId);
-        setRealProgress(newProgress);
-        console.log('Progress recalculated after status change:', newProgress);
-      }
-      
-      // Only reload comments if status changed (might have system comments)
+      // Calculate progress locally if status changed
       if (updates.status) {
-        await loadComments();
+        // Use local state for instant calculation
+        const updatedStages = stages.map(s => 
+          s.id === stageId ? { ...s, ...updates } : s
+        );
+        const completedCount = updatedStages.filter(s => s.status === 'completed').length;
+        const newProgress = Math.round((completedCount / updatedStages.length) * 100);
+        setRealProgress(newProgress);
+        
+        // Only load comments if it's a completion (might have system comment)
+        if (updates.status === 'completed') {
+          // Debounce comment loading to avoid rapid reloads
+          setTimeout(() => loadComments(), 500);
+        }
       }
-    } else {
-      // Fallback to reload if no specific update
-      await reloadProjectData();
-      await loadComments();
     }
+    // NO FALLBACK RELOADS - trust the optimistic update
   };
 
-  const handleOpenOutOfScopeForm = () => {
-    setIsOutOfScopeFormOpen(true);
-  };
-
-  const handleOutOfScopeSubmitted = () => {
-    setIsOutOfScopeFormOpen(false);
-    toast({
-      title: "Request Submitted!",
-      description: "Your out of scope request has been logged for review.",
-      className: "bg-green-500 text-white",
-    });
-  };
 
   const handleAddComment = async (content) => {
     if (!selectedStageId) return;
@@ -368,10 +359,23 @@ export default function Dashboard() {
             </motion.div>
           )}
           
-          <ProjectHeader 
-            project={project} 
-            onOpenOutOfScopeForm={!isClient ? handleOpenOutOfScopeForm : undefined} 
-          />
+          {/* Project Title and Milestone Info */}
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold text-gray-900">{project?.name || "Loading..."}</h1>
+            {project?.milestone_date && (
+              <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+                <CalendarDays className="w-4 h-4" />
+                <span>
+                  {(() => {
+                    const days = differenceInDays(new Date(project.milestone_date), new Date());
+                    return days > 0 
+                      ? `${days} days until ${project.milestone_name || 'launch'}`
+                      : `${project.milestone_name || 'Launch'} reached`;
+                  })()}
+                </span>
+              </div>
+            )}
+          </div>
           
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}>
             <div className="space-y-3">
@@ -449,14 +453,6 @@ export default function Dashboard() {
         )}
       </aside>
 
-      {project && (
-        <OutOfScopeForm
-          project={project}
-          open={isOutOfScopeFormOpen}
-          onOpenChange={setIsOutOfScopeFormOpen}
-          onSubmitted={handleOutOfScopeSubmitted}
-        />
-      )}
     </div>
   );
 }

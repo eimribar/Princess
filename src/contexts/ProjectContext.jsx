@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { SupabaseStage, SupabaseDeliverable, SupabaseTeamMember, SupabaseProject } from '@/api/supabaseEntities';
+import { supabase } from '@/lib/supabase';
 import dependencyEngine from '@/services/dependencyEngine';
 import dependencyWatcher from '@/services/dependencyWatcher';
 import { toast } from 'sonner';
@@ -24,10 +25,15 @@ export function ProjectProvider({ children }) {
   // Core state
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [project, setProject] = useState(null);
+  const [projects, setProjects] = useState([]); // All available projects
   const [stages, setStages] = useState([]);
   const [deliverables, setDeliverables] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSwitchingProject, setIsSwitchingProject] = useState(false);
+  
+  // Performance: Cache stages in Map for O(1) lookups
+  const stagesMapRef = useRef(new Map());
   
   // UI state
   const [selectedStage, setSelectedStage] = useState(null);
@@ -45,9 +51,13 @@ export function ProjectProvider({ children }) {
   // WebSocket simulation for real-time sync
   const syncChannel = useRef(null);
 
-  // Initialize dependency watcher
+  // Initialize dependency watcher - DISABLED, using realtime instead
   useEffect(() => {
-    if (currentProjectId) {
+    // PERFORMANCE: Disabled dependency watcher polling
+    // Now using Supabase realtime subscriptions for instant updates
+    // This saves hundreds of database queries per minute
+    
+    if (false && currentProjectId) { // Disabled
       // Start watching dependencies
       dependencyWatcher.startWatching(currentProjectId, 3000); // Check every 3 seconds
       
@@ -185,22 +195,46 @@ export function ProjectProvider({ children }) {
         console.log('No project ID found, loading first available project');
         await loadProjectData();
       }
-      
-      initializeSync();
     };
     
     initializeProject();
+  }, []);
+  
+  // Set up realtime subscriptions when project changes
+  useEffect(() => {
+    if (currentProjectId && !isLoading) {
+      // Clean up old subscriptions
+      if (syncChannel.current?.stageChannel) {
+        supabase.removeChannel(syncChannel.current.stageChannel);
+      }
+      if (syncChannel.current?.deliverableChannel) {
+        supabase.removeChannel(syncChannel.current.deliverableChannel);
+      }
+      
+      // Initialize new subscriptions
+      initializeSync();
+    }
     
     return () => {
-      if (syncChannel.current) {
-        syncChannel.current.close();
+      // Clean up on unmount
+      if (syncChannel.current?.stageChannel) {
+        supabase.removeChannel(syncChannel.current.stageChannel);
+      }
+      if (syncChannel.current?.deliverableChannel) {
+        supabase.removeChannel(syncChannel.current.deliverableChannel);
       }
     };
-  }, []);
+  }, [currentProjectId, isLoading]);
 
-  // Initialize dependency engine whenever stages change
+  // Initialize dependency engine and cache whenever stages change
   useEffect(() => {
     if (stages.length > 0) {
+      // Update stages cache for O(1) lookups
+      stagesMapRef.current.clear();
+      stages.forEach(stage => {
+        stagesMapRef.current.set(stage.id, stage);
+      });
+      
       // Process stages to ensure they have proper date fields
       const processedStages = stages.map(stage => ({
         ...stage,
@@ -316,6 +350,10 @@ export function ProjectProvider({ children }) {
     try {
       setIsLoading(true);
       
+      // Always load the list of all projects
+      const allProjects = await SupabaseProject.list('-created_at');
+      setProjects(allProjects || []);
+      
       // If we have a specific project ID, load that project's data
       if (projectId) {
         const [projectData, stagesData, deliverablesData, teamData] = await Promise.all([
@@ -381,30 +419,85 @@ export function ProjectProvider({ children }) {
   };
 
   /**
-   * Initialize real-time synchronization
+   * Initialize real-time synchronization with Supabase
    */
   const initializeSync = () => {
-    // In production, this would be a WebSocket connection
-    // For now, we'll use BroadcastChannel for cross-tab sync
+    // Set up Supabase realtime subscriptions for instant updates
+    if (currentProjectId && supabase) {
+      // Subscribe to stage changes for this project
+      const stageChannel = supabase
+        .channel(`project-stages-${currentProjectId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'stages',
+            filter: `project_id=eq.${currentProjectId}`
+          },
+          (payload) => {
+            console.log('Realtime stage update:', payload.new.id);
+            // Update ONLY the changed stage - super fast, no queries
+            setStages(prev => prev.map(s => 
+              s.id === payload.new.id ? { ...s, ...payload.new } : s
+            ));
+            
+            // Handle cascade updates for dependencies
+            if (payload.new.status === 'completed' && payload.old.status !== 'completed') {
+              // Unblock dependent stages optimistically
+              setStages(prev => prev.map(stage => {
+                if (stage.dependencies?.includes(payload.new.id) && stage.status === 'blocked') {
+                  const allDepsComplete = stage.dependencies.every(depId => {
+                    if (depId === payload.new.id) return true;
+                    const dep = prev.find(s => s.id === depId);
+                    return dep?.status === 'completed';
+                  });
+                  
+                  if (allDepsComplete) {
+                    return { ...stage, status: 'not_started' };
+                  }
+                }
+                return stage;
+              }));
+            }
+            
+            notifySubscribers('stage_realtime_update', payload.new);
+          }
+        )
+        .subscribe();
+      
+      // Subscribe to deliverable changes for this project
+      const deliverableChannel = supabase
+        .channel(`project-deliverables-${currentProjectId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'deliverables',
+            filter: `project_id=eq.${currentProjectId}`
+          },
+          (payload) => {
+            console.log('Realtime deliverable update:', payload.new.id);
+            // Update ONLY the changed deliverable
+            setDeliverables(prev => prev.map(d => 
+              d.id === payload.new.id ? { ...d, ...payload.new } : d
+            ));
+            
+            notifySubscribers('deliverable_realtime_update', payload.new);
+          }
+        )
+        .subscribe();
+      
+      // Store channels for cleanup
+      syncChannel.current = { stageChannel, deliverableChannel };
+    }
+    
+    // Keep BroadcastChannel for cross-tab sync as fallback
     if (typeof BroadcastChannel !== 'undefined') {
-      syncChannel.current = new BroadcastChannel('princess-project-sync');
-      
-      syncChannel.current.onmessage = (event) => {
+      const tabSync = new BroadcastChannel('princess-project-sync');
+      tabSync.onmessage = (event) => {
         handleSyncMessage(event.data);
-      };
-      
-      // Also listen to deliverable-updates channel for status changes from DeliverableDetail page
-      const deliverableChannel = new BroadcastChannel('deliverable-updates');
-      deliverableChannel.onmessage = (event) => {
-        const { type, deliverableId, newStatus, projectId } = event.data;
-        if (type === 'status_updated' && projectId === currentProjectId) {
-          // Update the deliverable in our state
-          setDeliverables(prev => prev.map(d => 
-            d.id === deliverableId ? { ...d, status: newStatus } : d
-          ));
-          
-          console.log('[ProjectContext] Received deliverable status update via broadcast:', deliverableId, newStatus);
-        }
       };
     }
   };
@@ -477,7 +570,7 @@ export function ProjectProvider({ children }) {
   };
 
   /**
-   * Quick update for stage status/assignment without full reload - optimistic UI
+   * Quick update for stage status/assignment without full reload - TRUE optimistic UI
    */
   const updateStageOptimistic = async (stageId, updates) => {
     try {
@@ -488,99 +581,87 @@ export function ProjectProvider({ children }) {
         return false;
       }
       
+      const timestamp = new Date().toISOString();
+      const updatedStage = { ...currentStage, ...updates, updated_at: timestamp };
+      
       // Update local state IMMEDIATELY for instant UI response
-      setStages(prev => {
-        const newStages = prev.map(s => 
-          s.id === stageId ? { ...s, ...updates, updated_at: new Date().toISOString() } : s
-        );
-        return [...newStages];
-      });
+      setStages(prev => prev.map(s => s.id === stageId ? updatedStage : s));
       
-      // If a deliverable stage's status changed, update the associated deliverable IMMEDIATELY
-      if (currentStage.is_deliverable && currentStage.deliverable_id && updates.status) {
-        // Map stage status to deliverable status
-        const deliverableStatus = updates.status === 'completed' ? 'approved' :
-                                 updates.status === 'blocked' ? 'declined' :
-                                 updates.status === 'in_progress' ? 'in_progress' :
-                                 'not_started';
-        
-        setDeliverables(prev => {
-          const newDeliverables = prev.map(d =>
-            d.id === currentStage.deliverable_id 
-              ? { ...d, status: deliverableStatus, updated_at: new Date().toISOString() }
-              : d
-          );
-          return [...newDeliverables];
-        });
-      }
-      
-      // Persist to backend in background WITHOUT blocking the UI update
-      // Using Promise to ensure proper async handling
-      (async () => {
-        try {
-          // Add small delay to ensure UI updates first
-          await new Promise(resolve => setTimeout(resolve, 10));
-          
-          // Persist the update with proper status mapping
-          const result = await SupabaseStage.update(stageId, updates);
-          
-          if (!result) {
-            throw new Error('Update returned no result');
-          }
-          
-          console.log('Stage update persisted:', {
-            stageId,
-            updates,
-            result: result.status
-          });
-          
-          // Broadcast to other tabs after successful save
-          broadcastChange('stage_update', { id: stageId, updates });
-          
-          // If status changed and it's a deliverable stage, sync the deliverable
-          if (updates.status && currentStage.is_deliverable && currentStage.deliverable_id) {
-            const deliverableStatus = updates.status === 'completed' ? 'approved' :
-                                     updates.status === 'blocked' ? 'declined' :
-                                     updates.status === 'in_progress' ? 'in_progress' :
-                                     'not_started';
-            
-            try {
-              await SupabaseDeliverable.update(currentStage.deliverable_id, {
-                status: deliverableStatus,
-                _skipStageSync: true
+      // If status changed, handle cascade updates optimistically
+      if (updates.status) {
+        // Update dependent stages optimistically (unblock them if needed)
+        if (updates.status === 'completed') {
+          setStages(prev => prev.map(stage => {
+            // Check if this stage was blocked by the completed stage
+            if (stage.dependencies?.includes(stageId) && stage.status === 'blocked') {
+              // Check if ALL dependencies are now complete
+              const allDepsComplete = stage.dependencies.every(depId => {
+                if (depId === stageId) return true; // The stage we just completed
+                const dep = prev.find(s => s.id === depId);
+                return dep?.status === 'completed';
               });
-            } catch (deliverableError) {
-              console.error('Failed to sync deliverable status:', deliverableError);
-              // Don't fail the whole operation
-            }
-          }
-        } catch (error) {
-          console.error('Failed to persist stage update:', error);
-          // Revert on error
-          try {
-            const originalStage = await SupabaseStage.get(stageId);
-            if (originalStage) {
-              setStages(prev => prev.map(s => 
-                s.id === stageId ? originalStage : s
-              ));
               
-              // Also revert deliverable if needed
-              if (currentStage.is_deliverable && currentStage.deliverable_id) {
-                const originalDeliverable = await SupabaseDeliverable.get(currentStage.deliverable_id);
-                if (originalDeliverable) {
-                  setDeliverables(prev => prev.map(d =>
-                    d.id === currentStage.deliverable_id ? originalDeliverable : d
-                  ));
-                }
+              if (allDepsComplete) {
+                // Unblock the stage
+                return { ...stage, status: 'not_started', updated_at: timestamp };
               }
             }
-          } catch (revertError) {
-            console.error('Failed to revert after error:', revertError);
-          }
-          
-          toast.error('Failed to save stage update. Please refresh the page.');
+            return stage;
+          }));
         }
-      })();
+        
+        // If a deliverable stage's status changed, update the associated deliverable
+        if (currentStage.is_deliverable && currentStage.deliverable_id) {
+          const deliverableStatus = updates.status === 'completed' ? 'approved' :
+                                   updates.status === 'blocked' ? 'declined' :
+                                   updates.status === 'in_progress' ? 'in_progress' :
+                                   'not_started';
+          
+          setDeliverables(prev => prev.map(d =>
+            d.id === currentStage.deliverable_id 
+              ? { ...d, status: deliverableStatus, updated_at: timestamp }
+              : d
+          ));
+        }
+      }
+      
+      // Persist to backend in background - fire and forget
+      // NO RELOADS, NO REFETCHES - trust the optimistic update
+      SupabaseStage.update(stageId, updates)
+        .then(result => {
+          if (result) {
+            // Broadcast to other tabs/users
+            broadcastChange('stage_update', { id: stageId, updates });
+            
+            // Sync deliverable if needed
+            if (updates.status && currentStage.is_deliverable && currentStage.deliverable_id) {
+              const deliverableStatus = updates.status === 'completed' ? 'approved' :
+                                       updates.status === 'blocked' ? 'declined' :
+                                       updates.status === 'in_progress' ? 'in_progress' :
+                                       'not_started';
+              
+              SupabaseDeliverable.update(currentStage.deliverable_id, {
+                status: deliverableStatus,
+                _skipStageSync: true
+              }).catch(err => {
+                console.error('Failed to sync deliverable:', err);
+                // Silent fail - UI already updated
+              });
+            }
+          }
+        })
+        .catch(error => {
+          console.error('Failed to persist stage update:', error);
+          // Only revert on network errors, not validation errors
+          if (error.message?.includes('network') || error.message?.includes('fetch')) {
+            // Revert optimistic update
+            setStages(prev => prev.map(s => s.id === stageId ? currentStage : s));
+            toast.error('Connection lost. Changes reverted.');
+          }
+        });
+      
+      // Notify subscribers for immediate UI updates across components
+      notifySubscribers('stage_updated', { stage: updatedStage, updates });
       
       return true;
     } catch (error) {
@@ -1030,6 +1111,7 @@ export function ProjectProvider({ children }) {
     if (projectId === currentProjectId) return;
     
     console.log(`🔄 Switching from project ${currentProjectId} to ${projectId}`);
+    setIsSwitchingProject(true);
     setIsLoading(true);
     
     // CRITICAL: Clear ALL data completely before switching
@@ -1067,10 +1149,15 @@ export function ProjectProvider({ children }) {
     try {
       await loadProjectData(projectId);
       console.log(`✅ Successfully switched to project ${projectId}`);
+      
+      // Store in localStorage for persistence
+      localStorage.setItem('princess_last_project_id', projectId);
     } catch (error) {
       console.error(`❌ Failed to switch to project ${projectId}:`, error);
       toast.error('Failed to switch project. Please try again.');
+    } finally {
       setIsLoading(false);
+      setIsSwitchingProject(false);
     }
   };
 
@@ -1084,14 +1171,21 @@ export function ProjectProvider({ children }) {
   };
 
   /**
+   * Get stage by ID - O(1) lookup using cache
+   */
+  const getStageById = useCallback((stageId) => {
+    return stagesMapRef.current.get(stageId) || stages.find(s => s.id === stageId);
+  }, [stages]);
+  
+  /**
    * Get stage dependencies
    */
   const getStageDependencies = (stageId) => {
-    const stage = stages.find(s => s.id === stageId);
+    const stage = getStageById(stageId);
     if (!stage) return [];
     
     return (stage.dependencies || []).map(depId => 
-      stages.find(s => s.id === depId)
+      getStageById(depId)
     ).filter(Boolean);
   };
 
@@ -1169,10 +1263,12 @@ export function ProjectProvider({ children }) {
     // Core data
     currentProjectId,
     project,
+    projects,  // Add projects list
     stages,
     deliverables,
     teamMembers,
     isLoading,
+    isSwitchingProject,  // Add switching state
     
     // Selected/UI state
     selectedStage,
@@ -1195,6 +1291,7 @@ export function ProjectProvider({ children }) {
     canRedo: historyIndex < history.length - 1,
     
     // Dependency functions
+    getStageById,  // Fast O(1) lookup
     getStageDependencies,
     getStageDependents,
     getCriticalPath,
@@ -1215,10 +1312,12 @@ export function ProjectProvider({ children }) {
   }), [
     currentProjectId,
     project,
+    projects,
     stages,
     deliverables,
     teamMembers,
     isLoading,
+    isSwitchingProject,
     selectedStage,
     pendingChanges,
     isValidating,
@@ -1233,6 +1332,7 @@ export function ProjectProvider({ children }) {
     historyIndex,
     history.length,
     switchProject,
+    getStageById,
     getStageDependencies,
     getStageDependents,
     getCriticalPath,

@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useRef } from "react";
+import React, { useMemo, useState, useRef, memo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,8 @@ import { getDependencyStatus } from "./DependencyUtils";
 import DependencyIndicator from "./DependencyIndicator";
 import DeliverableTooltip from "@/components/deliverables/DeliverableTooltip";
 
-const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId, hoveredStageId, deliverables }) => {
+// Memoize StageCard for performance - only re-render when necessary
+const StageCard = memo(({ stage, onClick, isSelected, teamMembers, allStages, setHoveredStageId, hoveredStageId, deliverables }) => {
   const navigate = useNavigate();
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
@@ -288,7 +289,15 @@ const StageCard = ({ stage, onClick, isSelected, teamMembers, allStages, setHove
       />
     </>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if key props change
+  return (
+    prevProps.stage.status === nextProps.stage.status &&
+    prevProps.stage.assigned_to === nextProps.stage.assigned_to &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.hoveredStageId === nextProps.hoveredStageId
+  );
+});
 
 const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMembers, setHoveredStageId, hoveredStageId, deliverables }) => {
   const phaseStages = stages
@@ -334,8 +343,12 @@ const PhaseSection = ({ phase, stages, onStageClick, selectedStageId, teamMember
   );
 };
 
-export default function VisualTimeline({ stages, onStageClick, selectedStageId, teamMembers, deliverables }) {
+function VisualTimeline({ stages, onStageClick, selectedStageId, teamMembers, deliverables }) {
   const [hoveredStageId, setHoveredStageId] = React.useState(null);
+  
+  // Memoize callbacks to prevent unnecessary re-renders
+  const memoizedStageClick = useCallback(onStageClick, []);
+  const memoizedSetHovered = useCallback(setHoveredStageId, []);
 
   const phases = [
     {
@@ -449,3 +462,6 @@ export default function VisualTimeline({ stages, onStageClick, selectedStageId, 
     </div>
   );
 }
+
+// Export memoized version for performance
+export default memo(VisualTimeline);

@@ -20,9 +20,13 @@ import {
   CheckCircle2,
   Clock,
   X,
+  Plus,
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
 import NotificationBell from '@/components/notifications/NotificationBell';
+import ProjectSelector from '@/components/dashboard/ProjectSelector';
+import SlackIcon from '@/components/icons/SlackIcon';
+import GoogleDriveIcon from '@/components/icons/GoogleDriveIcon';
 import { useUser } from '@/contexts/SupabaseUserContext';
 import { useProject } from '@/contexts/ProjectContext';
 import { getVisibleNavigationItems, getRoleDisplayName, getRoleBadgeColor } from '@/lib/permissions';
@@ -225,10 +229,6 @@ export default function Layout({ children, currentPageName }) {
                                     <p className="text-xs text-gray-500">{user?.email || 'maya@email.com'}</p>
                                 </div>
                             </div>
-                            <NotificationBell 
-                                onNotificationClick={handleNotificationClick}
-                                className="ml-2"
-                            />
                         </div>
                     </div>
                 </div>
@@ -239,15 +239,32 @@ export default function Layout({ children, currentPageName }) {
                 {/* Desktop header */}
                 <header className="hidden md:flex bg-white border-b border-gray-200 px-6 py-3">
                     <div className="flex items-center justify-between w-full">
-                        {/* Simple project name display instead of dropdown */}
-                        <div className="flex items-center gap-2 text-sm">
-                            <FolderKanban className="w-4 h-4 text-gray-500" />
-                            <span className="text-gray-600">Project:</span>
-                            <span className="font-medium text-gray-900">
-                                {project?.name || 'No project selected'}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-4">
+                        {/* Project Selector */}
+                        <ProjectSelector />
+                        
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" size="sm" asChild>
+                              <a href="https://slack.com/app_redirect?channel=C123456789" target="_blank" rel="noopener noreferrer">
+                                <SlackIcon className="w-4 h-4 mr-2" />
+                                Slack
+                              </a>
+                            </Button>
+                            <Button variant="ghost" size="sm" asChild>
+                              <a href="https://drive.google.com/drive/folders/your-project-folder-id" target="_blank" rel="noopener noreferrer">
+                                <GoogleDriveIcon className="w-4 h-4 mr-2" />
+                                Drive
+                              </a>
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => navigate('/out-of-scope')}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Out of Scope
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => navigate('/timeline')}>
+                              <GanttChartSquare className="w-4 h-4 mr-2" />
+                              Timeline
+                            </Button>
+                            <div className="w-px h-6 bg-gray-200 mx-2" />
                             <NotificationBell 
                                 onNotificationClick={handleNotificationClick}
                             />

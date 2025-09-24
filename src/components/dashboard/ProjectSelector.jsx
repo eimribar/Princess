@@ -3,9 +3,8 @@
  * Allows users to switch between multiple projects
  */
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { SupabaseProject } from '@/api/supabaseEntities';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useProject } from '@/contexts/ProjectContext';
 import {
   Select,
@@ -14,52 +13,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, Briefcase, FolderOpen } from 'lucide-react';
-import { format } from 'date-fns';
 
 export default function ProjectSelector() {
   const navigate = useNavigate();
-  const { projectId } = useParams();
-  const { switchProject, currentProjectId } = useProject();
-  const [projects, setProjects] = useState([]);
-  const [currentProject, setCurrentProject] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    loadProjects();
-  }, [projectId]);
-
-  const loadProjects = async () => {
-    try {
-      setIsLoading(true);
-      
-      // Load projects from Supabase only (no fallback to avoid contamination)
-      let projectList = await SupabaseProject.list('-created_at');
-      
-      setProjects(projectList || []);
-      
-      // Set current project
-      if (projectId) {
-        const current = projectList.find(p => p.id === projectId);
-        setCurrentProject(current);
-      } else if (projectList.length > 0) {
-        setCurrentProject(projectList[0]);
-      }
-      
-    } catch (error) {
-      console.error('Failed to load projects:', error);
-      setProjects([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const { 
+    switchProject, 
+    currentProjectId, 
+    project: currentProject,
+    projects,
+    isLoading,
+    isSwitchingProject 
+  } = useProject();
 
   const handleProjectChange = async (projectId) => {
     if (projectId === 'new') {
       navigate('/project-initiation');
-    } else {
+    } else if (projectId !== currentProjectId) {
       // Switch project in context first
       await switchProject(projectId);
       // Then navigate
@@ -77,11 +48,13 @@ export default function ProjectSelector() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isSwitchingProject) {
     return (
       <div className="flex items-center gap-2 px-4 py-2">
         <Briefcase className="w-4 h-4 text-gray-400 animate-pulse" />
-        <span className="text-sm text-gray-500">Loading projects...</span>
+        <span className="text-sm text-gray-500">
+          {isSwitchingProject ? 'Switching project...' : 'Loading projects...'}
+        </span>
       </div>
     );
   }
@@ -107,11 +80,14 @@ export default function ProjectSelector() {
       </div>
       
       <Select
-        value={currentProject?.id || ''}
+        value={currentProjectId || ''}
         onValueChange={handleProjectChange}
+        disabled={isSwitchingProject}
       >
         <SelectTrigger className="w-[300px]">
-          <SelectValue placeholder="Select a project" />
+          <SelectValue>
+            {currentProject?.name || 'Select a project'}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {projects.map((project) => (
