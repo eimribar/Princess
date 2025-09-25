@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SupabaseDeliverable as Deliverable, SupabaseStage as Stage, SupabaseComment as Comment, SupabaseTeamMember as TeamMember } from '@/api/supabaseEntities';
 import { useProject } from '@/contexts/ProjectContext';
@@ -37,6 +37,9 @@ export default function DeliverableDetailV2() {
   const { id } = useParams();
   const { user } = useUser();
   
+  // Debug logging for role visibility
+  console.log('🔍 DeliverableDetailV2 - Current user role:', user?.role, 'User:', user?.email);
+  
   // Project context for real-time updates
   let projectContext = null;
   try {
@@ -58,6 +61,52 @@ export default function DeliverableDetailV2() {
   const [showFilePreview, setShowFilePreview] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Permission system - CRITICAL for role-based access
+  // MUST be declared AFTER state variables to avoid reference errors
+  const canEdit = useMemo(() => {
+    // Default to false (no edit) to ensure clients can't edit
+    if (!user || user.role === 'client') {
+      console.log('🚫 DeliverableDetailV2 - Edit DENIED for role:', user?.role || 'no user');
+      return false;
+    }
+    
+    // Only allow edit for admin or agency
+    const hasEditPermission = user.role === 'admin' || user.role === 'agency';
+    console.log(hasEditPermission ? '✅' : '❌', 'DeliverableDetailV2 - canEdit:', hasEditPermission, 'for role:', user.role);
+    return hasEditPermission;
+  }, [user, user?.role]);
+  
+  // Permission to approve/decline - includes decision-maker clients
+  const canApprove = useMemo(() => {
+    if (!user) return false;
+    
+    // Admin and agency can always approve
+    if (user.role === 'admin' || user.role === 'agency') return true;
+    
+    // Clients can approve only if they are decision makers
+    if (user.role === 'client') {
+      // Check if user is a decision maker in team members
+      const isDecisionMaker = teamMembers.find(m => m.email === user.email || m.user_id === user.id)?.is_decision_maker;
+      console.log('🎯 DeliverableDetailV2 - Client decision maker:', isDecisionMaker);
+      return isDecisionMaker === true;
+    }
+    
+    return false;
+  }, [user, user?.role, teamMembers]);
+  
+  // Debug when user role changes
+  useEffect(() => {
+    if (user) {
+      console.log('🔄 DeliverableDetailV2 - User role changed to:', user.role);
+      console.log('👤 Full user object:', user);
+      // Check localStorage to see what's stored
+      const storedUser = localStorage.getItem('princess_user');
+      if (storedUser) {
+        console.log('💾 localStorage princess_user role:', JSON.parse(storedUser).role);
+      }
+    }
+  }, [user?.role]);
 
   // Load data on mount
   useEffect(() => {
@@ -312,7 +361,7 @@ export default function DeliverableDetailV2() {
             {/* Action Buttons (Contextual) */}
             <div className="px-4 pb-4">
               <div className="flex gap-2">
-                {deliverable.status === 'submitted' && (
+                {deliverable.status === 'submitted' && canApprove && (
                   <>
                     <Button onClick={handleApprove} className="bg-green-600 hover:bg-green-700">
                       <ThumbsUp className="w-4 h-4 mr-2" />
@@ -324,7 +373,7 @@ export default function DeliverableDetailV2() {
                     </Button>
                   </>
                 )}
-                {(deliverable.status === 'not_started' || deliverable.status === 'declined' || deliverable.status === 'in_progress') && (
+                {canEdit && (deliverable.status === 'not_started' || deliverable.status === 'declined' || deliverable.status === 'in_progress') && (
                   <Button onClick={handleVersionUpload} className="bg-blue-600 hover:bg-blue-700">
                     <Upload className="w-4 h-4 mr-2" />
                     Upload New Version
@@ -482,36 +531,52 @@ export default function DeliverableDetailV2() {
             <h2 className="text-xl font-bold text-gray-900 px-4 pb-3 pt-5">Management</h2>
             <div className="px-4 space-y-3">
               <div>
-                <label className="text-sm font-medium text-gray-700">Status</label>
-                <Select value={deliverable.status} onValueChange={handleStatusChange}>
-                  <SelectTrigger className="w-full mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="not_started">Not Started</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="submitted">Submitted</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="declined">Declined</SelectItem>
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium text-gray-700">{canEdit ? 'Update Status' : 'Status'}</label>
+                {canEdit ? (
+                  <Select value={deliverable.status} onValueChange={handleStatusChange}>
+                    <SelectTrigger className="w-full mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="not_started">Not Started</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="submitted">Submitted</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="declined">Declined</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-md bg-gray-50">
+                    <span className="text-gray-700 capitalize">
+                      {deliverable.status?.replace(/_/g, ' ') || 'Not Started'}
+                    </span>
+                  </div>
+                )}
               </div>
               
               <div>
-                <label className="text-sm font-medium text-gray-700">Assigned To</label>
-                <Select value={deliverable.assigned_to || ''} onValueChange={handleAssigneeChange}>
-                  <SelectTrigger className="w-full mt-1">
-                    <SelectValue placeholder="Unassigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassign">Unassigned</SelectItem>
-                    {teamMembers.map(member => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {member.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium text-gray-700">{canEdit ? 'Assigned To' : 'Assigned To'}</label>
+                {canEdit ? (
+                  <Select value={deliverable.assigned_to || ''} onValueChange={handleAssigneeChange}>
+                    <SelectTrigger className="w-full mt-1">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassign">Unassigned</SelectItem>
+                      {teamMembers.map(member => (
+                        <SelectItem key={member.id} value={member.id}>
+                          {member.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-md bg-gray-50">
+                    <span className="text-gray-700">
+                      {teamMembers.find(m => m.id === deliverable.assigned_to)?.name || 'Unassigned'}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

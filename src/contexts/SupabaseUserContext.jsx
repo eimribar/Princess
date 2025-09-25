@@ -20,12 +20,13 @@ export function useUser() {
 }
 
 // Default user for localStorage mode
+// IMPORTANT: Default to 'client' role for security - users can upgrade role if needed
 const DEFAULT_USER = {
   id: 'user_1',
   name: 'Current User',
   email: 'user@deutschco.com',
-  role: 'admin',
-  team_type: 'agency',
+  role: 'client',  // Changed from 'admin' to 'client' for security
+  team_type: 'client',  // Changed from 'agency' to 'client'
   is_decision_maker: false,
   notification_level: 3,
   notification_channels: ['email'],
@@ -33,14 +34,14 @@ const DEFAULT_USER = {
   profile_image: null,
   custom_buttons: [],
   permissions: {
-    canEdit: true,
-    canApprove: true,
-    canDelete: true,
-    canViewFinancials: true,
-    canManageTeam: true,
-    canManageProject: true,
-    canEditPlaybook: true,
-    canViewAdmin: true
+    canEdit: false,  // Clients cannot edit
+    canApprove: false,  // Non-decision-maker clients cannot approve
+    canDelete: false,
+    canViewFinancials: false,
+    canManageTeam: false,
+    canManageProject: false,
+    canEditPlaybook: false,
+    canViewAdmin: false
   }
 };
 
@@ -314,6 +315,7 @@ export function UserProvider({ children }) {
   };
 
   const setUserRole = (role) => {
+    console.log('🔄 setUserRole called - Changing role from', user?.role, 'to', role);
     const permissions = getPermissionsByRole(role);
     const updatedUser = {
       ...user,
@@ -321,6 +323,7 @@ export function UserProvider({ children }) {
       permissions
     };
     setUser(updatedUser);
+    console.log('✅ User role updated to:', role, 'with permissions:', permissions);
     
     // Update in database if using Supabase
     if (isSupabaseMode && user?.id) {

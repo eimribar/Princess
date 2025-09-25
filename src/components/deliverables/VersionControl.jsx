@@ -70,14 +70,16 @@ export default function VersionControl({ deliverable, onVersionUpload, onApprova
               Current: {currentVersion}
             </Badge>
           )}
-          <Button 
-            onClick={() => onVersionUpload && onVersionUpload(getNextVersionNumber())}
-            disabled={!canUploadNewVersion()}
-            size="sm"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload {getNextVersionNumber()}
-          </Button>
+          {onVersionUpload && (
+            <Button 
+              onClick={() => onVersionUpload(getNextVersionNumber())}
+              disabled={!canUploadNewVersion()}
+              size="sm"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Upload {getNextVersionNumber()}
+            </Button>
+          )}
         </div>
       </div>
 

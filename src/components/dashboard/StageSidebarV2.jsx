@@ -1,64 +1,79 @@
 import React, { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  X, 
-  ChevronRight,
-  ChevronLeft,
-  Lock,
-  ExternalLink, 
-  MessageCircle,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  Star,
-  Send,
-  FileText,
-  Paperclip,
-  Calendar,
-  Info,
-  GitBranch,
-  Activity,
-  Video,
-  Play,
-  Loader2,
-  User,
-  AlertCircle
-} from "lucide-react";
-import { format, formatDistanceToNow, isValid } from "date-fns";
-import { SupabaseStage, SupabaseTeamMember, SupabaseComment } from "@/api/supabaseEntities";
-import ProfessionalManagement from './ProfessionalManagement';
-import MiniDependencyMap from './MiniDependencyMap';
-import { motion, AnimatePresence } from "framer-motion";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { motion } from "framer-motion";
+import { formatDistanceToNow, isValid, format } from "date-fns";
+import { SupabaseStage, SupabaseDeliverable } from "@/api/supabaseEntities";
 import { getDependencyStatus } from './DependencyUtils';
+import { useToast } from "@/components/ui/use-toast";
 
-// Helper function to find all stages that depend on a given stage
-const findDescendants = (stageId, allStages) => {
-  const descendants = new Set();
-  const queue = [stageId];
-  const visited = new Set();
+// Material Icons
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import LockIcon from '@mui/icons-material/Lock';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import StarIcon from '@mui/icons-material/Star';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CloseIcon from '@mui/icons-material/Close';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
-  while (queue.length > 0) {
-    const currentId = queue.shift();
-    if (visited.has(currentId)) continue;
-    visited.add(currentId);
-
-    const children = allStages.filter(s => s.dependencies?.includes(currentId));
-    for (const child of children) {
-      if (!descendants.has(child.id)) {
-        descendants.add(child);
-        queue.push(child.id);
-      }
-    }
+// Helper to get status icon
+const getStatusIcon = (status) => {
+  switch (status) {
+    case 'completed':
+      return <CheckCircleIcon className="text-green-600" style={{ fontSize: 'inherit' }} />;
+    case 'in_progress':
+      return <AccessTimeIcon className="text-blue-600" style={{ fontSize: 'inherit' }} />;
+    case 'blocked':
+      return <LockIcon className="text-red-500" style={{ fontSize: 'inherit' }} />;
+    default:
+      return <RadioButtonUncheckedIcon className="text-gray-400" style={{ fontSize: 'inherit' }} />;
   }
-  return Array.from(descendants);
+};
+
+// Helper to get status button style
+const getStatusButtonStyle = (status) => {
+  switch (status) {
+    case 'completed':
+      return 'bg-green-100 text-green-700 hover:bg-green-200';
+    case 'in_progress':
+      return 'bg-blue-100 text-blue-700 hover:bg-blue-200';
+    case 'blocked':
+      return 'bg-red-100 text-red-700 hover:bg-red-200';
+    default:
+      return 'bg-gray-100 text-gray-700 hover:bg-gray-200';
+  }
+};
+
+// Helper to get status label
+const getStatusLabel = (status) => {
+  switch (status) {
+    case 'completed': return 'Completed';
+    case 'in_progress': return 'In Progress';
+    case 'blocked': return 'Blocked';
+    case 'not_started': return 'Ready';
+    default: return 'Not Started';
+  }
+};
+
+// Helper to find descendants
+const findDescendants = (stageId, allStages) => {
+  const descendants = [];
+  const findDeps = (id) => {
+    allStages.forEach(stage => {
+      if (stage.dependencies?.includes(id) && !descendants.find(d => d.id === stage.id)) {
+        descendants.push(stage);
+        findDeps(stage.id);
+      }
+    });
+  };
+  findDeps(stageId);
+  return descendants;
 };
 
 export default function StageSidebarV2({ 
@@ -69,37 +84,70 @@ export default function StageSidebarV2({
   onAddComment, 
   onStageUpdate, 
   teamMembers,
-  isExpanded,
+  isExpanded = false,
   onToggleExpand,
-  deliverables = []
+  deliverables = [],
+  readOnly = false
 }) {
   const [newComment, setNewComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [isUpdatingAssignee, setIsUpdatingAssignee] = useState(false);
-  const [updateMessage, setUpdateMessage] = useState(null);
+  const [selectedStatus, setSelectedStatus] = useState(stage?.status || 'not_started');
+  const [selectedAssignee, setSelectedAssignee] = useState(null);
   const [activeTab, setActiveTab] = useState("details");
+  const [localExpanded, setLocalExpanded] = useState(isExpanded);
+  const { toast } = useToast();
+  
+  // Use local state if no handler provided
+  const handleToggle = () => {
+    if (onToggleExpand) {
+      onToggleExpand();
+    } else {
+      setLocalExpanded(!localExpanded);
+    }
+  };
+  
+  const expanded = onToggleExpand ? isExpanded : localExpanded;
   
   // Check if stage is locked/blocked
   const dependencyStatus = stage ? getDependencyStatus(stage, stages) : 'not_started';
   const isLocked = dependencyStatus === 'blocked';
-  const canModify = !isLocked && stage?.status !== 'completed';
+  // Allow reverting completed stages
+  const canModify = !isLocked && onStageUpdate;
+  
+  // Get associated deliverable for deliverable stages
+  const associatedDeliverable = stage?.is_deliverable ? 
+    deliverables?.find(d => d.id === stage.deliverable_id || d.stage_id === stage.id) : null;
+  
+  // Get assigned member
+  const assignedMember = (() => {
+    if (stage?.is_deliverable && associatedDeliverable?.assigned_to) {
+      return teamMembers.find(member => member.id === associatedDeliverable.assigned_to);
+    }
+    return stage?.assigned_to ? teamMembers.find(member => member.id === stage.assigned_to) : null;
+  })();
+  
+  useEffect(() => {
+    // Always sync with the stage's actual status
+    if (stage?.status) {
+      setSelectedStatus(stage.status);
+    }
+  }, [stage?.status]);
+  
+  useEffect(() => {
+    // Sync assignee separately
+    setSelectedAssignee(assignedMember?.id || 'unassigned');
+  }, [assignedMember?.id]);
 
   if (!stage) {
     return (
-      <div className="w-full h-full flex flex-col bg-white">
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 text-gray-400 animate-spin mx-auto mb-3" />
-            <p className="text-sm text-gray-500">Loading stage details...</p>
-          </div>
-        </div>
+      <div className="w-full h-full flex items-center justify-center bg-white">
+        <p className="text-gray-400">Loading...</p>
       </div>
     );
   }
 
   const handleSubmitComment = async () => {
-    if (!newComment.trim() || !canModify) return;
+    if (!newComment.trim()) return;
     
     setIsSubmitting(true);
     try {
@@ -112,432 +160,570 @@ export default function StageSidebarV2({
   };
 
   const handleStatusChange = async (newStatus) => {
-    if (!canModify) return;
+    if (!canModify || newStatus === selectedStatus) return;
     
-    setIsUpdatingStatus(true);
-    setUpdateMessage(null);
-    const originalStatus = stage.status;
-
+    // Update local state immediately for instant feedback
+    const previousStatus = selectedStatus;
+    setSelectedStatus(newStatus);
+    
     try {
-      await SupabaseStage.update(stage.id, { status: newStatus });
-      await onAddComment(`Status changed to: ${newStatus.replace('_', ' ').toUpperCase()}`);
-      setUpdateMessage({ type: 'success', text: `Status updated to ${newStatus.replace('_', ' ')}` });
-
-      if (originalStatus === 'completed' && newStatus !== 'completed') {
-        const descendants = findDescendants(stage.id, stages || []);
-        const stagesToReset = descendants.filter(s => s.status === 'in_progress');
-
-        if (stagesToReset.length > 0) {
-          for (const descendant of stagesToReset) {
-            await SupabaseStage.update(descendant.id, { status: 'not_started' });
-            await SupabaseComment.create({
-              project_id: descendant.project_id,
-              stage_id: descendant.id,
-              content: `Status automatically reset because dependency "${stage.name}" was un-completed.`,
-              author_name: 'System',
-              author_email: 'system@princess.app',
-              user_id: null, // System comment
-              is_internal: false,
-              created_date: new Date().toISOString()
-            });
-          }
+      // Simple validation - don't block the UI update
+      if (newStatus === 'completed' || newStatus === 'in_progress') {
+        // Check if dependencies are met
+        const incompleteDeps = stage.dependencies?.filter(depId => {
+          const dep = stages.find(s => s.id === depId);
+          return dep && dep.status !== 'completed';
+        }) || [];
+        
+        if (incompleteDeps.length > 0 && newStatus !== 'not_started') {
+          // Revert optimistic update
+          setSelectedStatus(previousStatus);
+          toast({
+            title: "Cannot Change Status",
+            description: `${incompleteDeps.length} dependencies must be completed first`,
+            variant: "destructive",
+          });
+          return;
         }
       }
       
+      // Call the parent's update handler directly
       if (onStageUpdate) {
-        await onStageUpdate();
+        await onStageUpdate(stage.id, { status: newStatus });
+        
+        toast({
+          title: newStatus === 'completed' ? "Stage Completed!" : 
+                 newStatus === 'in_progress' ? "Stage Started" : "Status Updated",
+          description: `${stage.name} status changed to ${newStatus.replace('_', ' ')}`,
+          duration: 3000,
+        });
       }
     } catch (error) {
-      console.error("Failed to update stage status:", error);
-      setUpdateMessage({ type: 'error', text: 'Failed to update status.' });
+      // Revert on error
+      setSelectedStatus(previousStatus);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update status",
+        variant: "destructive",
+      });
     }
-    setIsUpdatingStatus(false);
-    setTimeout(() => setUpdateMessage(null), 3000);
   };
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'completed': return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />;
-      case 'in_progress': return <Clock className="w-3.5 h-3.5 text-blue-600" />;
-      case 'blocked': return <AlertTriangle className="w-3.5 h-3.5 text-red-600" />;
-      case 'not_started': return <Clock className="w-3.5 h-3.5 text-slate-500" />;
-      default: return <Clock className="w-3.5 h-3.5 text-slate-500" />;
+  
+  const handleAssigneeChange = async (value) => {
+    try {
+      const memberId = value === 'unassigned' ? null : value;
+      
+      if (stage?.is_deliverable && associatedDeliverable) {
+        await SupabaseDeliverable.update(associatedDeliverable.id, { assigned_to: memberId });
+        await SupabaseStage.update(stage.id, { assigned_to: memberId });
+      } else {
+        await SupabaseStage.update(stage.id, { assigned_to: memberId });
+      }
+      
+      setSelectedAssignee(value);
+      const member = teamMembers.find(m => m.id === memberId);
+      toast({
+        title: "Assignee Updated",
+        description: member ? `Assigned to ${member.name}` : "Assignment removed",
+        duration: 3000,
+      });
+      onStageUpdate && onStageUpdate(stage.id, { assigned_to: memberId });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update assignee",
+        variant: "destructive",
+      });
     }
   };
 
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
-  const deadlineDate = stage.deadline ? new Date(stage.deadline) : null;
   
-  // For deliverable stages, use the deliverable's assigned_to as single source of truth
-  const getAssignedMember = () => {
-    if (stage.is_deliverable) {
-      const associatedDeliverable = deliverables?.find(d => 
-        d.id === stage.deliverable_id || d.stage_id === stage.id
-      );
-      if (associatedDeliverable?.assigned_to) {
-        return teamMembers.find(member => member.id === associatedDeliverable.assigned_to);
-      }
-    }
-    // For non-deliverable stages, use stage's assigned_to
-    return teamMembers.find(member => member.id === stage.assigned_to);
-  };
+  // Get dependencies
+  const blockedDependencies = stage.dependencies?.map(depId => 
+    stages.find(s => s.id === depId)
+  ).filter(dep => dep && dep.status !== 'completed') || [];
   
-  const assignedMember = getAssignedMember();
+  const completedDependencies = stage.dependencies?.map(depId => 
+    stages.find(s => s.id === depId)
+  ).filter(dep => dep && dep.status === 'completed') || [];
+  
+  // Get stages that depend on this one
+  const enabledStages = stages.filter(s => 
+    s.dependencies?.includes(stage.id)
+  );
 
-  // Get blocked dependencies
-  const blockedDependencies = isLocked ? 
-    (stage.dependencies || []).map(depId => stages.find(s => s.id === depId))
-      .filter(dep => dep && dep.status !== 'completed') : [];
+  // Navigate to previous/next stage
+  const currentIndex = stages.findIndex(s => s.id === stage.id);
+  const prevStage = currentIndex > 0 ? stages[currentIndex - 1] : null;
+  const nextStage = currentIndex < stages.length - 1 ? stages[currentIndex + 1] : null;
 
   return (
     <motion.div 
-      className="w-full h-full flex flex-col bg-white"
-      animate={{ width: isExpanded ? 600 : 380 }}
+      className="h-full flex flex-col bg-white border-l border-gray-200"
+      initial={{ width: 380 }}
+      animate={{ width: expanded ? 600 : 380 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
     >
       {/* Header */}
-      <CardHeader className="border-b border-gray-200 p-4 flex-shrink-0 bg-white">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{stage.number_index}</span>
-              </div>
-              <div className="flex-1">
-                <CardTitle className="text-lg font-semibold text-slate-900">
-                  Step {stage.number_index}: {stage.name}
-                </CardTitle>
-              </div>
-              {stage.is_deliverable && <Star className="w-4 h-4 text-amber-400 fill-current" />}
-              {isLocked && <Lock className="w-4 h-4 text-gray-400" />}
-            </div>
-            
-            <div className="flex items-center gap-2 ml-11">
-              {getStatusIcon(dependencyStatus)}
-              <Badge variant="outline" className="text-xs font-medium">
-                {dependencyStatus.replace('_', ' ').toUpperCase()}
-              </Badge>
-              {stage.category && (
-                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 border-purple-200 capitalize">
-                  {stage.category.replace('_', ' ')}
-                </Badge>
-              )}
-            </div>
+      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-9 h-9 bg-indigo-600 text-white flex items-center justify-center rounded-full text-sm font-bold flex-shrink-0">
+            {stage.number_index}
           </div>
-          
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggleExpand}
-              className="h-8 w-8"
-            >
-              {isExpanded ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-            </Button>
-            <button 
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              type="button"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
+          <h1 className="text-lg font-semibold text-gray-900 truncate">
+            {stage.name}
+            {stage.is_deliverable && (
+              <StarIcon className="inline ml-1 text-amber-400" style={{ fontSize: 16 }} />
+            )}
+          </h1>
         </div>
-
-        {/* Locked Stage Alert */}
-        {isLocked && blockedDependencies.length > 0 && (
-          <Alert className="mt-4 bg-amber-50 border-amber-200">
-            <Lock className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="text-amber-800">
-              <strong>This stage is locked.</strong> Complete these first:
-              <ul className="mt-2 space-y-1">
-                {blockedDependencies.map(dep => (
-                  <li key={dep.id} className="text-sm">
-                    • Step {dep.number_index}: {dep.name}
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Update Message */}
-        {updateMessage && (
-          <Alert className={`mt-4 ${
-            updateMessage.type === 'success' ? 'bg-green-50 border-green-200' : 
-            updateMessage.type === 'info' ? 'bg-blue-50 border-blue-200' : 
-            'bg-red-50 border-red-200'
-          }`}>
-            <AlertDescription>{updateMessage.text}</AlertDescription>
-          </Alert>
-        )}
-      </CardHeader>
-
-      {/* Management Section - Always visible */}
-      <div className="p-4 border-b border-gray-200">
-        <ProfessionalManagement 
-          stage={stage}
-          allStages={stages}
-          onStageUpdate={onStageUpdate}
-          teamMembers={teamMembers}
-          isReadOnly={!onStageUpdate}
-          deliverables={deliverables}
-        />
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleToggle}
+            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md transition-colors"
+            title={expanded ? "Collapse" : "Expand"}
+          >
+            {expanded ? 
+              <ChevronRightIcon style={{ fontSize: 20 }} /> : 
+              <ChevronLeftIcon style={{ fontSize: 20 }} />
+            }
+          </button>
+          <button 
+            className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors ${getStatusButtonStyle(dependencyStatus)}`}
+          >
+            <span className="text-sm">{getStatusIcon(dependencyStatus)}</span>
+            <span>{getStatusLabel(dependencyStatus)}</span>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md transition-colors ml-2"
+          >
+            <CloseIcon style={{ fontSize: 20 }} />
+          </button>
+        </div>
       </div>
 
-      {/* Deliverable Section - Show if stage is a deliverable */}
-      {stage.is_deliverable && (() => {
-        const associatedDeliverable = deliverables?.find(d => 
-          d.id === stage.deliverable_id || d.stage_id === stage.id
-        );
-        
-        if (!associatedDeliverable) {
-          return (
-            <div className="p-4 border-b border-gray-200 bg-amber-50">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-amber-900">Deliverable Not Created</p>
-                  <p className="text-xs text-amber-700 mt-1">
-                    A deliverable will be automatically created when you start working on this stage.
-                  </p>
-                </div>
-              </div>
+      <ScrollArea className="flex-1 overflow-x-hidden">
+        <div className="p-4 space-y-4">
+          {/* Phase Badge */}
+          {stage.category && (
+            <div className="flex items-center">
+              <span className="text-xs font-medium text-gray-500 w-20">Phase:</span>
+              <span className="px-2.5 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 rounded-full capitalize">
+                {stage.category.replace('_', ' ')}
+              </span>
             </div>
-          );
-        }
-        
-        return (
-          <div className="p-4 border-b border-gray-200 bg-indigo-50">
+          )}
+
+          {/* Controls - Show for agency/admin only */}
+          {!readOnly ? (
             <div className="space-y-3">
+              <div className="flex items-center">
+                <label className="text-xs font-medium text-gray-500 w-20">Status:</label>
+                <Select
+                  value={selectedStatus}
+                  onValueChange={handleStatusChange}
+                  disabled={!canModify}
+                >
+                  <SelectTrigger className="flex-1 h-8 text-sm">
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(selectedStatus)}
+                      <SelectValue />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_started">
+                      <div className="flex items-center gap-2">
+                        <RadioButtonUncheckedIcon className="text-gray-400" style={{ fontSize: 16 }} />
+                        <span>Not Started</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="in_progress">
+                      <div className="flex items-center gap-2">
+                        <AccessTimeIcon className="text-blue-600" style={{ fontSize: 16 }} />
+                        <span>In Progress</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="completed">
+                      <div className="flex items-center gap-2">
+                        <CheckCircleIcon className="text-green-600" style={{ fontSize: 16 }} />
+                        <span>Completed</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex items-center">
+                <label className="text-xs font-medium text-gray-500 w-20">Assigned:</label>
+                <Select
+                  value={selectedAssignee || 'unassigned'}
+                  onValueChange={handleAssigneeChange}
+                  disabled={!onStageUpdate}
+                >
+                  <SelectTrigger className="flex-1 h-8 text-sm">
+                    {assignedMember ? (
+                      <div className="flex items-center gap-2">
+                        <Avatar className="w-5 h-5">
+                          <AvatarImage src={assignedMember.profile_image} />
+                          <AvatarFallback className="text-xs bg-gray-100">
+                            {getInitials(assignedMember.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span>{assignedMember.name}</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-500">Unassigned</span>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">
+                      <span className="text-gray-500">Unassigned</span>
+                    </SelectItem>
+                    {teamMembers.map(member => (
+                      <SelectItem key={member.id} value={member.id}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-5 h-5">
+                            <AvatarImage src={member.profile_image} />
+                            <AvatarFallback className="text-xs bg-gray-100">
+                              {getInitials(member.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{member.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            /* Client View - Show status and assigned person as read-only */
+            <div className="space-y-3">
+              <div className="flex items-center">
+                <label className="text-xs font-medium text-gray-500 w-20">Status:</label>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-md flex-1">
+                  {getStatusIcon(selectedStatus)}
+                  <span className="text-sm">{getStatusLabel(selectedStatus)}</span>
+                </div>
+              </div>
+              
+              {assignedMember && (
+                <div className="flex items-center">
+                  <label className="text-xs font-medium text-gray-500 w-20">Team Lead:</label>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-md flex-1">
+                    <Avatar className="w-5 h-5">
+                      <AvatarImage src={assignedMember.profile_image} />
+                      <AvatarFallback className="text-xs bg-gray-100">
+                        {getInitials(assignedMember.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm">{assignedMember.name}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Deliverable Card */}
+          {stage.is_deliverable && associatedDeliverable && (
+            <div 
+              onClick={() => window.location.href = `/deliverables/${associatedDeliverable.id}`}
+              className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-md cursor-pointer hover:bg-indigo-100 transition-colors"
+            >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-indigo-600" />
-                  <span className="text-sm font-medium text-indigo-900">Deliverable Status</span>
-                </div>
-                <Badge variant="outline" className={`text-xs font-medium ${
-                  associatedDeliverable.status === 'approved' ? 'bg-green-50 text-green-700 border-green-300' :
-                  associatedDeliverable.status === 'submitted' ? 'bg-amber-50 text-amber-700 border-amber-300' :
-                  associatedDeliverable.status === 'declined' ? 'bg-red-50 text-red-700 border-red-300' :
-                  associatedDeliverable.status === 'in_progress' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                  'bg-gray-50 text-gray-700 border-gray-300'
+                <span className="text-xs font-medium text-indigo-900">Deliverable</span>
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                  associatedDeliverable.status === 'approved' ? 'bg-green-100 text-green-700' :
+                  associatedDeliverable.status === 'submitted' ? 'bg-amber-100 text-amber-700' :
+                  'bg-gray-100 text-gray-700'
                 }`}>
-                  {associatedDeliverable.status.replace('_', ' ').toUpperCase()}
-                </Badge>
+                  {associatedDeliverable.status}
+                </span>
+              </div>
+              {associatedDeliverable.max_iterations && (
+                <div className="mt-1.5 text-xs text-indigo-700">
+                  Iteration {associatedDeliverable.current_iteration}/{associatedDeliverable.max_iterations}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Video Preview (when expanded) */}
+          {expanded && (
+            <div className="mt-4">
+              <h3 className="text-xs font-medium text-gray-500 mb-2">Preview</h3>
+              <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden group cursor-pointer">
+                {/* Placeholder for video */}
+                <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300">
+                  {stage.wireframe_example ? (
+                    <img 
+                      src={stage.wireframe_example} 
+                      alt={`${stage.name} preview`}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-gray-500 text-sm">No preview available</p>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Play button overlay */}
+                {stage.video_url && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-40 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                      <PlayArrowIcon className="text-gray-900 ml-1" style={{ fontSize: 32 }} />
+                    </div>
+                  </div>
+                )}
+                
+                {/* Video info overlay */}
+                {stage.video_url && (
+                  <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent">
+                    <p className="text-white text-sm font-medium">Stage Overview</p>
+                    <p className="text-white/80 text-xs">Click to play video</p>
+                  </div>
+                )}
               </div>
               
-              {associatedDeliverable.current_iteration > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">Iteration</span>
-                  <span className="font-medium">
-                    {associatedDeliverable.current_iteration} of {associatedDeliverable.max_iterations || 3}
-                  </span>
-                </div>
+              {/* Video description */}
+              {expanded && stage.video_description && (
+                <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                  {stage.video_description}
+                </p>
               )}
-              
-              {associatedDeliverable.versions?.length > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-600">Versions</span>
-                  <span className="font-medium">{associatedDeliverable.versions.length}</span>
-                </div>
-              )}
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full mt-2"
-                onClick={() => window.location.href = `/deliverables/${associatedDeliverable.id}`}
+            </div>
+          )}
+
+          {/* Tabs */}
+          <div className="border-b border-gray-200 -mx-4">
+            <nav className="-mb-px flex space-x-4 px-4">
+              <button
+                onClick={() => setActiveTab('details')}
+                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-xs transition-colors ${
+                  activeTab === 'details'
+                    ? 'text-indigo-600 border-indigo-600'
+                    : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+                }`}
               >
-                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                View Deliverable Details
-              </Button>
-            </div>
+                Details
+              </button>
+              <button
+                onClick={() => setActiveTab('activity')}
+                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-xs transition-colors ${
+                  activeTab === 'activity'
+                    ? 'text-indigo-600 border-indigo-600'
+                    : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Activity
+              </button>
+            </nav>
           </div>
-        );
-      })()}
 
-      {/* Simplified Tabs - Only 2 */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-2 px-4 bg-gray-50">
-          <TabsTrigger value="details" className="text-sm">
-            <Info className="w-4 h-4 mr-1.5" />
-            Details
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="text-sm">
-            <Activity className="w-4 h-4 mr-1.5" />
-            Activity
-          </TabsTrigger>
-        </TabsList>
+          {/* Tab Content */}
+          {activeTab === 'details' ? (
+            <div className="space-y-4 mt-4">
+              {/* Details */}
+              {stage.formal_name && stage.formal_name !== stage.name && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 mb-1">Formal Name</h3>
+                  <p className="text-sm text-gray-900">{stage.formal_name}</p>
+                </div>
+              )}
+              
+              {stage.description && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 mb-1">Description</h3>
+                  <p className="text-sm text-gray-700 leading-relaxed">{stage.description}</p>
+                </div>
+              )}
+              
+              {stage.deadline && isValid(new Date(stage.deadline)) && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 mb-1">Deadline</h3>
+                  <p className="text-sm text-gray-900">{format(new Date(stage.deadline), 'MMM d, yyyy')}</p>
+                </div>
+              )}
 
-        <ScrollArea className="flex-1">
-          {/* Details Tab - Combined content */}
-          <TabsContent value="details" className="p-4 space-y-4 mt-0">
-            {/* Overview Section */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
-                <Info className="w-4 h-4 text-gray-400" />
-                <span>Overview</span>
-              </h4>
-              <div className="space-y-3">
-                {stage.formal_name && stage.formal_name !== stage.name && (
+              {/* Dependencies Section - Same view for all users */}
+              <div className="pt-2 space-y-4">
+                  <h2 className="text-xs font-semibold uppercase text-gray-500 tracking-wider">Dependencies</h2>
+                  
+                  <div className="space-y-4">
+                    {/* Depends On */}
+                    {(blockedDependencies.length > 0 || completedDependencies.length > 0) && (
                   <div>
-                    <p className="text-xs text-gray-500 font-medium mb-1">Formal Name</p>
-                    <p className="text-gray-900 text-sm">{stage.formal_name}</p>
-                  </div>
-                )}
-                {stage.description && (
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium mb-1">Description</p>
-                    <p className="text-gray-700 text-sm leading-relaxed">{stage.description}</p>
-                  </div>
-                )}
-                {isValid(deadlineDate) && (
-                  <div>
-                    <p className="text-xs text-gray-500 font-medium mb-1">Deadline</p>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-gray-400"/>
-                      <span className="text-sm text-gray-700">
-                        {format(deadlineDate, 'MMMM d, yyyy')}
-                      </span>
+                    <h3 className="text-xs font-medium text-gray-400 mb-2">
+                      DEPENDS ON ({blockedDependencies.length + completedDependencies.length})
+                    </h3>
+                    <div className="space-y-1.5">
+                      {completedDependencies.map(dep => (
+                        <div
+                          key={dep.id}
+                          onClick={() => document.getElementById(`stage-${dep.id}`)?.click()}
+                          className="flex items-center justify-between p-2 rounded-md bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 flex items-center justify-center rounded-full bg-green-100">
+                              <CheckCircleIcon className="text-green-600" style={{ fontSize: 14 }} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {dep.number_index}. {dep.name}
+                              </p>
+                              <span className="text-xs text-green-600">completed</span>
+                            </div>
+                          </div>
+                          <ChevronRightIcon className="text-gray-400" style={{ fontSize: 18 }} />
+                        </div>
+                      ))}
+                      {blockedDependencies.map(dep => (
+                        <div
+                          key={dep.id}
+                          onClick={() => document.getElementById(`stage-${dep.id}`)?.click()}
+                          className="flex items-center justify-between p-2 rounded-md bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 flex items-center justify-center rounded-full bg-red-100">
+                              <LockIcon className="text-red-500" style={{ fontSize: 14 }} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {dep.number_index}. {dep.name}
+                              </p>
+                              <span className="text-xs text-red-500">
+                                {dep.status === 'in_progress' ? 'in progress' : 'not started'}
+                              </span>
+                            </div>
+                          </div>
+                          <ChevronRightIcon className="text-gray-400" style={{ fontSize: 18 }} />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
-                {assignedMember && (
+
+                {/* Current Stage Highlight */}
+                <div className="p-2 rounded-md bg-indigo-50 border border-indigo-400">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 flex items-center justify-center rounded-full border-2 border-indigo-500">
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-indigo-700">
+                        {stage.number_index}. {stage.name}
+                      </p>
+                      <span className="text-xs text-indigo-600">Current Stage</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Enables */}
+                {enabledStages.length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-500 font-medium mb-1">Assigned To</p>
-                    <div className="flex items-center gap-2">
-                      <Avatar className="w-6 h-6">
-                        <AvatarImage src={assignedMember.profile_image} />
-                        <AvatarFallback className="text-xs bg-gray-100">
-                          {getInitials(assignedMember.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="text-sm text-gray-700">{assignedMember.name}</span>
+                    <h3 className="text-xs font-medium text-gray-400 mb-2">
+                      ENABLES ({enabledStages.length})
+                    </h3>
+                    <div className="space-y-1.5">
+                      {enabledStages.map(dep => {
+                        const depStatus = getDependencyStatus(dep, stages);
+                        return (
+                          <div
+                            key={dep.id}
+                            onClick={() => document.getElementById(`stage-${dep.id}`)?.click()}
+                            className="flex items-center justify-between p-2 rounded-md bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className={`w-6 h-6 flex items-center justify-center rounded-full ${
+                                depStatus === 'completed' ? 'bg-green-100' :
+                                depStatus === 'in_progress' ? 'bg-blue-100' :
+                                depStatus === 'blocked' ? 'bg-red-100' :
+                                'bg-gray-100'
+                              }`}>
+                                {depStatus === 'completed' ? 
+                                  <CheckCircleIcon className="text-green-600" style={{ fontSize: 14 }} /> :
+                                  depStatus === 'in_progress' ?
+                                  <AccessTimeIcon className="text-blue-600" style={{ fontSize: 14 }} /> :
+                                  depStatus === 'blocked' ?
+                                  <LockIcon className="text-red-500" style={{ fontSize: 14 }} /> :
+                                  <RadioButtonUncheckedIcon className="text-gray-400" style={{ fontSize: 14 }} />
+                                }
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {dep.number_index}. {dep.name}
+                                </p>
+                                <span className={`text-xs ${
+                                  depStatus === 'completed' ? 'text-green-600' :
+                                  depStatus === 'in_progress' ? 'text-blue-600' :
+                                  depStatus === 'blocked' ? 'text-red-500' :
+                                  'text-gray-500'
+                                }`}>
+                                  {getStatusLabel(depStatus).toLowerCase()}
+                                </span>
+                              </div>
+                            </div>
+                            <ArrowForwardIcon className="text-gray-400" style={{ fontSize: 18 }} />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
-            
-            {/* Video Section - Only in expanded view */}
-            {isExpanded && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
-                  <Video className="w-4 h-4 text-gray-400" />
-                  <span>Tutorial Video</span>
-                </h4>
-                <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <button className="bg-white/90 backdrop-blur rounded-full p-4 shadow-lg hover:bg-white transition-colors">
-                      <Play className="w-8 h-8 text-gray-700 ml-1" />
-                    </button>
-                  </div>
-                  <div className="absolute bottom-4 left-4 right-4">
-                    <p className="text-sm text-gray-600 bg-white/90 backdrop-blur rounded px-3 py-2">
-                      Introduction to {stage.name}
-                    </p>
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {/* Dependencies Section */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
-                <GitBranch className="w-4 h-4 text-gray-400" />
-                <span>Dependencies</span>
-              </h4>
-              <MiniDependencyMap 
-                currentStage={stage}
-                allStages={stages}
-              />
             </div>
-            
-            {/* Resources Section */}
-            {stage.resource_links?.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h4 className="flex items-center gap-2 font-medium text-gray-900 text-sm mb-4">
-                  <Paperclip className="w-4 h-4 text-gray-400" />
-                  <span>Resources</span>
-                </h4>
-                <div className="space-y-2">
-                  {stage.resource_links.map((link, index) => (
-                    <Button key={index} variant="outline" asChild className="w-full justify-start text-left">
-                      <a href={link} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        {link.split('/').pop() || 'Resource Link'}
-                      </a>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Activity Tab */}
-          <TabsContent value="activity" className="p-4 mt-0">
+          ) : (
+            // Activity Tab
             <div className="space-y-4">
-              {/* Comment Form - Only if not locked */}
               {canModify && (
                 <div className="space-y-2">
                   <Textarea 
-                    placeholder="Add a comment or log an update..."
+                    placeholder="Add a comment..."
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
-                    className="bg-white"
-                    disabled={!canModify}
+                    className="min-h-[80px] text-sm"
                   />
                   <Button 
                     onClick={handleSubmitComment} 
-                    disabled={!newComment.trim() || isSubmitting || !canModify} 
+                    disabled={!newComment.trim() || isSubmitting} 
+                    size="sm"
                     className="w-full"
                   >
-                    <Send className="w-4 h-4 mr-2" />
                     {isSubmitting ? "Posting..." : "Post Comment"}
                   </Button>
                 </div>
               )}
-
-              {/* Locked Message */}
-              {!canModify && (
-                <Alert className="bg-gray-50 border-gray-200">
-                  <Lock className="h-4 w-4 text-gray-400" />
-                  <AlertDescription className="text-gray-600">
-                    Comments are disabled for locked stages
-                  </AlertDescription>
-                </Alert>
-              )}
               
-              {/* Comments List */}
-              <div className="space-y-5 pt-2">
+              <div className="space-y-3">
                 {comments.map(comment => (
-                  <div key={comment.id} className="flex items-start gap-3">
-                    <Avatar className="w-8 h-8 border">
-                      <AvatarImage />
-                      <AvatarFallback className="text-xs bg-slate-100 font-semibold text-slate-600">
+                  <div key={comment.id} className="flex items-start gap-2.5">
+                    <Avatar className="w-7 h-7">
+                      <AvatarFallback className="text-xs bg-gray-100">
                         {getInitials(comment.author_name)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <div className="bg-slate-100/80 rounded-lg px-3 py-2">
-                        <p className="text-sm text-slate-700 leading-relaxed">
-                          {comment.content}
-                        </p>
+                      <div className="bg-gray-50 rounded-lg px-3 py-2">
+                        <p className="text-sm text-gray-700">{comment.content}</p>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1.5">
+                      <p className="text-xs text-gray-500 mt-1">
                         {comment.author_name} • {formatDistanceToNow(new Date(comment.created_date), { addSuffix: true })}
                       </p>
                     </div>
                   </div>
                 ))}
                 {comments.length === 0 && (
-                  <p className="text-sm text-slate-500 text-center py-4">No activity on this step yet.</p>
+                  <p className="text-sm text-gray-400 text-center py-8">No comments yet</p>
                 )}
               </div>
             </div>
-          </TabsContent>
-        </ScrollArea>
-      </Tabs>
+          )}
+        </div>
+      </ScrollArea>
     </motion.div>
   );
 }

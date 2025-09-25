@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Briefcase } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -8,17 +8,21 @@ import NotificationBell from "@/components/notifications/NotificationBell";
 import ProjectSelector from "./ProjectSelector";
 import SlackIcon from "../icons/SlackIcon";
 import GoogleDriveIcon from "../icons/GoogleDriveIcon";
+import { useUser } from '@/contexts/SupabaseUserContext';
 
 export default function ProjectHeader({ project, onOpenOutOfScopeForm }) {
+  const { user } = useUser();
   const milestoneDays = project?.milestone_date
     ? differenceInDays(new Date(project.milestone_date), new Date())
     : 84;
 
   return (
     <div>
-        <div className="mb-4">
-            <ProjectSelector />
-        </div>
+        {user?.role !== 'client' && (
+            <div className="mb-4">
+                <ProjectSelector />
+            </div>
+        )}
         <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
             <div>
                 <h1 className="text-3xl font-bold text-gray-900">{project?.name || "Loading..."}</h1>

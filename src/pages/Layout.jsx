@@ -21,6 +21,7 @@ import {
   Clock,
   X,
   Plus,
+  Briefcase,
 } from "lucide-react";
 import { createPageUrl } from '@/utils';
 import NotificationBell from '@/components/notifications/NotificationBell';
@@ -48,7 +49,7 @@ export default function Layout({ children, currentPageName }) {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, setUserRole } = useUser();
-    const { project } = useProject();
+    const { project, deliverables } = useProject();
     const [attentionCount, setAttentionCount] = useState(0);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     
@@ -71,12 +72,12 @@ export default function Layout({ children, currentPageName }) {
     
     // Calculate attention required items for clients
     useEffect(() => {
-        if (user?.role === 'client') {
-            // In real app, this would fetch from API
-            // For now, mock some attention items
-            setAttentionCount(3);
+        if (user?.role === 'client' && deliverables) {
+            // Count deliverables with submitted status (requiring client approval)
+            const pendingApproval = deliverables.filter(d => d.status === 'submitted').length;
+            setAttentionCount(pendingApproval);
         }
-    }, [user]);
+    }, [user, deliverables]);
 
     const handleNotificationClick = (notification) => {
         // Navigate to the relevant deliverable when notification is clicked
@@ -86,7 +87,7 @@ export default function Layout({ children, currentPageName }) {
     };
 
     return (
-        <div className="min-h-screen flex w-full">
+        <div className={`min-h-screen flex w-full role-${user?.role || 'guest'}`}>
             {/* Sidebar */}
             <div className="hidden md:flex md:w-64 md:flex-col">
                 <div className="flex flex-col flex-grow border-r border-gray-200/60 bg-white/80 backdrop-blur-xl">
@@ -239,8 +240,15 @@ export default function Layout({ children, currentPageName }) {
                 {/* Desktop header */}
                 <header className="hidden md:flex bg-white border-b border-gray-200 px-6 py-3">
                     <div className="flex items-center justify-between w-full">
-                        {/* Project Selector */}
-                        <ProjectSelector />
+                        {/* Project Selector - Hidden for clients */}
+                        {user?.role !== 'client' ? (
+                            <ProjectSelector />
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <Briefcase className="w-5 h-5 text-gray-500" />
+                                <span className="font-medium text-gray-900">{project?.name || 'Project'}</span>
+                            </div>
+                        )}
                         
                         {/* Action buttons */}
                         <div className="flex items-center gap-2">

@@ -18,15 +18,16 @@ export function canEditStage(user, stage) {
   return false;
 }
 
-export function canApproveDeliverable(user, deliverable) {
+export function canApproveDeliverable(user, deliverable, teamMember) {
   if (!user) return false;
   
   // Admin can approve anything
   if (user.role === 'admin') return true;
   
-  // Clients can approve deliverables
+  // Clients can approve ONLY if they are decision makers
   if (user.role === 'client') {
-    return hasPermission(user, 'canApprove');
+    // Must be a decision maker to approve
+    return teamMember?.is_decision_maker === true;
   }
   
   // Agency members cannot approve (conflict of interest)

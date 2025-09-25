@@ -350,7 +350,9 @@ export function ProjectProvider({ children }) {
     try {
       setIsLoading(true);
       
-      // Always load the list of all projects
+      // Load projects - in future, filter based on user role and team assignment
+      // TODO: For agency team members, filter by their team assignment
+      // TODO: For clients, only show their assigned project
       const allProjects = await SupabaseProject.list('-created_at');
       setProjects(allProjects || []);
       

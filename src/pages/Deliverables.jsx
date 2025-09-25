@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { SupabaseDeliverable, SupabaseStage } from "@/api/supabaseEntities";
 import { useProject } from '@/contexts/ProjectContext';
 import { useUser } from '@/contexts/SupabaseUserContext';
+import { useViewMode } from '@/hooks/useViewMode';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import { useToast } from "@/components/ui/use-toast";
 export default function Deliverables() {
   const { currentProjectId, stages: projectStages } = useProject();
   const { user } = useUser();
+  const { isClient, isDecisionMaker, canApprove, canEdit } = useViewMode();
   const { toast } = useToast();
   const [deliverables, setDeliverables] = useState([]);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -329,8 +331,8 @@ export default function Deliverables() {
     );
   }
 
-  // Show client dashboard for client users
-  if (user?.role === 'client' && user?.preferences?.showQuickActions) {
+  // Show client dashboard for client users who are decision makers
+  if (isClient && isDecisionMaker && user?.preferences?.showQuickActions) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-7xl mx-auto">
@@ -356,6 +358,78 @@ export default function Deliverables() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
+        {/* Action Required Section for Clients */}
+        {isClient && deliverables.filter(d => d.status === 'submitted').length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-xl p-6 shadow-sm"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+                <h2 className="text-xl font-semibold text-amber-900">Action Required</h2>
+                <Badge className="bg-amber-600 text-white">
+                  {deliverables.filter(d => d.status === 'submitted').length}
+                </Badge>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {deliverables.filter(d => d.status === 'submitted').slice(0, 3).map(deliverable => (
+                <div 
+                  key={deliverable.id} 
+                  className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-100 hover:shadow-md transition-all cursor-pointer"
+                  onClick={() => navigate(`/deliverables/${deliverable.id}`)}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-4 h-4 text-amber-600" />
+                    <div>
+                      <p className="font-medium text-gray-900">{deliverable.name}</p>
+                      <p className="text-sm text-gray-600">Stage {deliverable.stage_number}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isDecisionMaker && (
+                      <>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="gap-1 border-green-200 text-green-700 hover:bg-green-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickApprove(deliverable.id);
+                          }}
+                        >
+                          <ThumbsUp className="w-3 h-3" />
+                          Approve
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="gap-1 border-amber-200 text-amber-700 hover:bg-amber-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickDecline(deliverable.id);
+                          }}
+                        >
+                          <ThumbsDown className="w-3 h-3" />
+                          Request Changes
+                        </Button>
+                      </>
+                    )}
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  </div>
+                </div>
+              ))}
+              {deliverables.filter(d => d.status === 'submitted').length > 3 && (
+                <p className="text-sm text-amber-700 text-center pt-2">
+                  +{deliverables.filter(d => d.status === 'submitted').length - 3} more deliverables require your attention
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+
         {/* Header with Batch Actions */}
         <div className="flex justify-between items-start">
           <div>
@@ -364,7 +438,7 @@ export default function Deliverables() {
           </div>
           
           <div className="flex items-center gap-2">
-            {user?.permissions?.canBatchApprove && (
+            {canApprove && (
               <Button
                 variant={isSelectionMode ? "secondary" : "outline"}
                 className="gap-2"
@@ -378,10 +452,12 @@ export default function Deliverables() {
               </Button>
             )}
             
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" />
-              New Deliverable
-            </Button>
+            {canEdit && (
+              <Button className="gap-2">
+                <Plus className="w-4 h-4" />
+                New Deliverable
+              </Button>
+            )}
           </div>
         </div>
 
@@ -602,7 +678,7 @@ export default function Deliverables() {
                               <TableCell className="text-center">
                                 {getActionRequired(deliverable) && (
                                   <div className="flex items-center justify-center gap-1">
-                                    {user?.permissions?.canApprove && !isSelectionMode && (
+                                    {canApprove && !isSelectionMode && (
                                       <>
                                         <Button
                                           size="sm"
@@ -628,8 +704,11 @@ export default function Deliverables() {
                                         </Button>
                                       </>
                                     )}
-                                    {!user?.permissions?.canApprove && (
-                                      <Badge className="bg-red-500 text-white animate-pulse">Review</Badge>
+                                    {isClient && !isDecisionMaker && (
+                                      <Badge className="bg-amber-500 text-white">Awaiting Decision Maker</Badge>
+                                    )}
+                                    {!isClient && !canApprove && (
+                                      <Badge className="bg-blue-500 text-white">Review Required</Badge>
                                     )}
                                   </div>
                                 )}

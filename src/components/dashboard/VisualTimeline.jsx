@@ -177,6 +177,7 @@ const StageCard = memo(({ stage, onClick, isSelected, teamMembers, allStages, se
     <>
       <motion.div
         ref={stageRef}
+        id={`stage-${stage.id}`}
         className={`flex flex-col items-center gap-2 relative transition-all duration-300 cursor-pointer ${isBlocked ? 'opacity-75' : ''} pb-12`}
         data-stage-id={stage.id}
         onClick={handleClick}

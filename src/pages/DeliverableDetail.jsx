@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { SupabaseDeliverable as Deliverable, SupabaseStage as Stage, SupabaseComment as Comment, SupabaseTeamMember as TeamMember } from "@/api/supabaseEntities";
 import { useProject } from "@/contexts/ProjectContext";
+import { useUser } from "@/contexts/SupabaseUserContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,34 @@ import { motion } from "framer-motion";
 export default function DeliverableDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { user } = useUser();
+  
+  // Immediate logging
+  console.log('🔍 DeliverableDetail RENDER - User role:', user?.role, 'User:', user);
+  
+  // Debug logging to understand user role
+  useEffect(() => {
+    console.log('📌 DeliverableDetail useEffect - Current user role:', user?.role);
+    console.log('📌 DeliverableDetail useEffect - Full user object:', user);
+    // Check localStorage to see what's stored
+    const storedUser = localStorage.getItem('princess_user');
+    console.log('💾 DeliverableDetail - localStorage princess_user:', storedUser ? JSON.parse(storedUser) : 'No stored user');
+  }, [user]);
+  
+  // Determine edit permissions based on user role - using useMemo for proper reactivity
+  // IMPORTANT: Default to false (no edit) to ensure clients can't edit
+  const canEdit = useMemo(() => {
+    // If no user or role is explicitly 'client', deny edit permissions
+    if (!user || user.role === 'client') {
+      console.log('🚫 DeliverableDetail - Edit DENIED for role:', user?.role || 'no user');
+      return false;
+    }
+    
+    // Only allow edit for admin or agency
+    const hasEditPermission = user.role === 'admin' || user.role === 'agency';
+    console.log(hasEditPermission ? '✅' : '❌', 'DeliverableDetail - canEdit:', hasEditPermission, 'for role:', user.role);
+    return hasEditPermission;
+  }, [user, user?.role]);
   
   // Try to use ProjectContext but don't fail if it's not available
   let projectContext = null;
@@ -796,57 +825,85 @@ export default function DeliverableDetail() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Status Management */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Update Status</label>
-                  <Select 
-                    onValueChange={handleStatusChange} 
-                    defaultValue={deliverable.status}
-                    disabled={isUpdatingStatus}
-                  >
-                    <SelectTrigger className="w-full bg-white">
-                      <SelectValue placeholder="Select Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="not_started">Not Started</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="submitted">Submitted for Approval</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="declined">Declined</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {isUpdatingStatus && <p className="text-xs text-slate-500">Updating status...</p>}
+                  <label className="text-sm font-medium text-slate-700">{canEdit ? 'Update Status' : 'Status'}</label>
+                  {canEdit ? (
+                    <>
+                      <Select 
+                        onValueChange={handleStatusChange} 
+                        defaultValue={deliverable.status}
+                        disabled={isUpdatingStatus}
+                      >
+                        <SelectTrigger className="w-full bg-white">
+                          <SelectValue placeholder="Select Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="not_started">Not Started</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="submitted">Submitted for Approval</SelectItem>
+                          <SelectItem value="approved">Approved</SelectItem>
+                          <SelectItem value="declined">Declined</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {isUpdatingStatus && <p className="text-xs text-slate-500">Updating status...</p>}
+                    </>
+                  ) : (
+                    <div className="py-2">
+                      <StatusIndicator status={deliverable.status} size="md" />
+                    </div>
+                  )}
                 </div>
 
                 {/* Assignment Management */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Assigned To</label>
-                  <Select 
-                    onValueChange={handleAssigneeChange} 
-                    defaultValue={deliverable.assigned_to || ""}
-                    disabled={isUpdatingAssignee}
-                  >
-                    <SelectTrigger className="w-full bg-white">
-                      <SelectValue placeholder="Unassigned" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {teamMembers.map(member => (
-                        <SelectItem key={member.id} value={member.id}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="w-5 h-5">
-                              <AvatarImage src={member.profile_image} />
-                              <AvatarFallback className="text-xs">
-                                {getInitials(member.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            {member.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="unassign">
-                        <span className="text-slate-500 italic">Unassign</span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {isUpdatingAssignee && <p className="text-xs text-slate-500">Updating assignment...</p>}
+                  <label className="text-sm font-medium text-slate-700">{canEdit ? 'Assigned To' : 'Assigned To'}</label>
+                  {canEdit ? (
+                    <>
+                      <Select 
+                        onValueChange={handleAssigneeChange} 
+                        defaultValue={deliverable.assigned_to || ""}
+                        disabled={isUpdatingAssignee}
+                      >
+                        <SelectTrigger className="w-full bg-white">
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teamMembers.map(member => (
+                            <SelectItem key={member.id} value={member.id}>
+                              <div className="flex items-center gap-2">
+                                <Avatar className="w-5 h-5">
+                                  <AvatarImage src={member.profile_image} />
+                                  <AvatarFallback className="text-xs">
+                                    {getInitials(member.name)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                {member.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="unassign">
+                            <span className="text-slate-500 italic">Unassign</span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {isUpdatingAssignee && <p className="text-xs text-slate-500">Updating assignment...</p>}
+                    </>
+                  ) : (
+                    <div className="py-2">
+                      {assignedMember ? (
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-6 h-6">
+                            <AvatarImage src={assignedMember.profile_image} />
+                            <AvatarFallback className="text-xs">
+                              {getInitials(assignedMember.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm font-medium">{assignedMember.name}</span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-slate-500 italic">Unassigned</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1226,7 +1283,7 @@ export default function DeliverableDetail() {
             <TabsContent value="versions" className="space-y-6 mt-0">
               <VersionControl 
                 deliverable={deliverable}
-                onVersionUpload={handleVersionUpload}
+                onVersionUpload={canEdit ? handleVersionUpload : undefined}
                 onApprovalAction={handleApprovalAction}
                 onFilePreview={handleFilePreview}
                 onFileDownload={handleFileDownload}

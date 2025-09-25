@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SupabaseStage, SupabaseTeamMember } from "@/api/supabaseEntities";
+import { useViewMode } from '@/hooks/useViewMode';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,6 +31,8 @@ export default function Timeline() {
     canRedo,
     getCriticalPath
   } = useProject();
+  
+  const { isClient, canEdit } = useViewMode();
   
   const [selectedStageId, setSelectedStageId] = useState(null);
   const [selectedStage, setSelectedStage] = useState(null);
@@ -136,29 +139,31 @@ export default function Timeline() {
               </div>
             </div>
             
-            {/* Undo/Redo buttons */}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={undo}
-                disabled={!canUndo}
-                className="gap-2"
-              >
-                <Undo className="w-4 h-4" />
-                Undo
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={redo}
-                disabled={!canRedo}
-                className="gap-2"
-              >
-                <Redo className="w-4 h-4" />
-                Redo
-              </Button>
-            </div>
+            {/* Undo/Redo buttons - Only show for agency/admin */}
+            {canEdit && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  className="gap-2"
+                >
+                  <Undo className="w-4 h-4" />
+                  Undo
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  className="gap-2"
+                >
+                  <Redo className="w-4 h-4" />
+                  Redo
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Overall Progress Bar */}
@@ -192,9 +197,10 @@ export default function Timeline() {
               stages={stages}
               teamMembers={teamMembers}
               onStageClick={handleStageClick}
-              onStageUpdate={handleStageUpdate}
+              onStageUpdate={canEdit ? handleStageUpdate : undefined}
               zoom={currentZoom}
               onZoomChange={setCurrentZoom}
+              readOnly={!canEdit}
             />
           </TabsContent>
 

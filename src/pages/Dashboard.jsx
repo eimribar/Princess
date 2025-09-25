@@ -6,6 +6,7 @@ import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProject } from "@/contexts/ProjectContext";
 import { useUser } from "@/contexts/SupabaseUserContext";
+import { useViewMode } from "@/hooks/useViewMode";
 import dataFilterService from "@/services/dataFilterService";
 import { useAbortableRequest } from "@/services/abortableRequest";
 import { debounce } from 'lodash';
@@ -24,11 +25,9 @@ export default function Dashboard() {
   // Get project ID from URL if present
   const { projectId } = useParams();
   
-  // Get user context for role-based rendering
+  // Get user context and view mode for role-based rendering
   const { user } = useUser();
-  const isClient = user?.role === 'client';
-  const isAgency = user?.role === 'agency';
-  const isAdmin = user?.role === 'admin';
+  const { isClient, isAgency, isAdmin, canEdit, isDecisionMaker } = useViewMode();
   
   // Use global state from ProjectContext
   const { 
@@ -415,12 +414,12 @@ export default function Dashboard() {
                   setSelectedStageId(null);
                   setIsSidebarExpanded(false);
                 }}
-                onAddComment={!isClient ? handleAddComment : undefined}
-                onStageUpdate={!isClient ? handleStageUpdate : undefined}
+                onAddComment={canEdit ? handleAddComment : undefined}
+                onStageUpdate={canEdit ? handleStageUpdate : undefined}
                 teamMembers={teamMembers}
                 isExpanded={isSidebarExpanded}
                 onToggleExpand={() => setIsSidebarExpanded(!isSidebarExpanded)}
-                readOnly={isClient}
+                readOnly={!canEdit}
                 deliverables={deliverables}
           />
         ) : (
@@ -430,15 +429,17 @@ export default function Dashboard() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="p-4 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200"
+                className="p-4 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200 cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => navigate('/deliverables')}
               >
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-semibold text-red-900">Action Required</h3>
                     <p className="text-sm text-red-700 mt-1">
-                      You have {deliverables.filter(d => d.status === 'submitted').length} deliverables awaiting your review
+                      You have {deliverables.filter(d => d.status === 'submitted').length} {deliverables.filter(d => d.status === 'submitted').length === 1 ? 'deliverable' : 'deliverables'} awaiting your review
                     </p>
+                    <p className="text-xs text-red-600 mt-2 font-medium">Click to view →</p>
                   </div>
                 </div>
               </motion.div>
