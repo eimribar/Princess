@@ -8,7 +8,7 @@ import NotificationBell from "@/components/notifications/NotificationBell";
 import ProjectSelector from "./ProjectSelector";
 import SlackIcon from "../icons/SlackIcon";
 import GoogleDriveIcon from "../icons/GoogleDriveIcon";
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 
 export default function ProjectHeader({ project, onOpenOutOfScopeForm }) {
   const { user } = useUser();

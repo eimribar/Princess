@@ -83,7 +83,7 @@ export function UserProvider({ children }) {
               .single();
             
             if (profileError && profileError.code !== 'PGRST116') { // PGRST116 = no rows returned
-              // console.error('Profile fetch error:', profileError);
+              console.error('[Auth] Profile fetch error:', profileError);
             }
             
             if (profile) {
@@ -93,30 +93,88 @@ export function UserProvider({ children }) {
                 permissions: getPermissionsByRole(profile.role)
               };
               setUser(enrichedUser);
-              // console.log('User profile loaded:', enrichedUser);
-              // console.log('User role:', enrichedUser.role);
-              // console.log('User permissions:', enrichedUser.permissions);
+              console.log('[Auth] User profile loaded:', enrichedUser.email);
             } else {
-              // console.warn('No profile found for user, using defaults');
-              // Create a default user profile if none exists
-              const defaultUser = {
-                id: currentSession.user.id,
-                email: currentSession.user.email,
-                name: currentSession.user.email.split('@')[0],
-                role: 'viewer',
-                permissions: getPermissionsByRole('viewer')
-              };
-              setUser(defaultUser);
+              // No profile found - create one with default values
+              console.log('[Auth] No profile found for user, creating default profile');
+              
+              // Get metadata from auth user
+              const metadata = currentSession.user.user_metadata || {};
+              const defaultOrgId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+              
+              // Create profile using upsert to handle existing emails
+              const { data: newProfile, error: createError } = await supabase
+                .from('users')
+                .upsert({
+                  id: currentSession.user.id,
+                  email: currentSession.user.email,
+                  full_name: metadata.full_name || currentSession.user.email.split('@')[0],
+                  role: metadata.role || 'viewer',
+                  organization_id: metadata.organization_id || defaultOrgId,
+                  invitation_token: metadata.invitation_token,
+                  needs_onboarding: metadata.needs_onboarding !== false, // Default true unless explicitly false
+                  onboarding_completed: false,
+                  notification_preferences: {
+                    email: true,
+                    sms: false,
+                    level: 'all'
+                  }
+                }, {
+                  onConflict: 'id',
+                  ignoreDuplicates: false
+                })
+                .select()
+                .single();
+              
+              if (createError) {
+                console.error('[Auth] Failed to create profile:', createError);
+                // Use minimal user object if profile creation fails
+                const minimalUser = {
+                  id: currentSession.user.id,
+                  email: currentSession.user.email,
+                  name: currentSession.user.email.split('@')[0],
+                  role: metadata.role || 'viewer',
+                  permissions: getPermissionsByRole(metadata.role || 'viewer'),
+                  needs_onboarding: true
+                };
+                setUser(minimalUser);
+              } else if (newProfile) {
+                const enrichedUser = {
+                  ...newProfile,
+                  name: newProfile.full_name || newProfile.email.split('@')[0],
+                  permissions: getPermissionsByRole(newProfile.role)
+                };
+                setUser(enrichedUser);
+                console.log('[Auth] Profile created successfully for:', newProfile.email);
+              }
             }
           }
           
           // Listen for auth changes - FIXED: No database operations in callback
           const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
-            // console.log('Auth state changed:', event);
+            console.log('[Auth] State changed:', event, 'Session:', !!newSession);
             setSession(newSession);
+            
+            // Handle PASSWORD_RECOVERY event
+            if (event === 'PASSWORD_RECOVERY') {
+              console.log('[Auth] Password recovery event detected');
+              // Don't set user or fetch profile during password recovery
+              // The user should stay on the reset password page
+              return;
+            }
             
             // Set flags for useEffect to handle database operations
             if (event === 'SIGNED_IN' && newSession?.user) {
+              // Check if this is from a password reset link
+              const hashParams = new URLSearchParams(window.location.hash.substring(1));
+              const type = hashParams.get('type');
+              
+              if (type === 'recovery') {
+                console.log('[Auth] Signed in from password recovery link - skipping profile fetch');
+                // Don't fetch profile yet, let the reset password page handle it
+                return;
+              }
+              
               // Store user info temporarily, fetch profile in useEffect
               setUser({
                 id: newSession.user.id,
@@ -210,10 +268,27 @@ export function UserProvider({ children }) {
   const signIn = useCallback(async (email, password) => {
     if (isSupabaseMode) {
       try {
-        const { user: authUser } = await supabaseSignIn(email, password);
-        // User state will be updated via onAuthStateChange
-        return { success: true };
+        const { user: authUser, session } = await supabaseSignIn(email, password);
+        
+        // Explicitly set session and user to ensure immediate availability
+        if (session) {
+          setSession(session);
+          console.log('[SupabaseUserContext] Sign in successful, session established');
+          return { success: true, session, user: authUser };
+        } else if (authUser) {
+          // User exists but no session - likely email not confirmed
+          console.log('[SupabaseUserContext] User authenticated but no session - email not confirmed');
+          return { 
+            success: false, 
+            error: 'Please confirm your email address before signing in',
+            emailNotConfirmed: true 
+          };
+        }
+        
+        // No user or session - login failed
+        return { success: false, error: 'Invalid login credentials' };
       } catch (error) {
+        console.error('[SupabaseUserContext] Sign in error:', error);
         return { success: false, error: error.message };
       }
     } else {
@@ -231,38 +306,85 @@ export function UserProvider({ children }) {
   const signUp = async (email, password, metadata = {}) => {
     if (isSupabaseMode) {
       try {
-        const { data, error } = await supabaseSignUp(email, password, metadata);
+        console.log('[SupabaseUserContext] SignUp called for:', email);
         
-        if (error) throw error;
+        // CLIENT-SIDE VALIDATION: Temporarily disabled for testing
+        // We'll re-enable this once the basic flow works
+        if (!metadata.invitation_token) {
+          console.warn('[SupabaseUserContext] No invitation token provided - allowing for testing');
+        }
         
-        // Create user profile in database
-        if (data.user) {
-          // Use default organization for now
-          const defaultOrgId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+        // Enhanced metadata to include invitation details
+        const enhancedMetadata = {
+          ...metadata,
+          signup_source: 'invitation',
+          signup_timestamp: new Date().toISOString()
+        };
+        
+        // supabaseSignUp returns the data object directly
+        const data = await supabaseSignUp(email, password, enhancedMetadata);
+        
+        console.log('[SupabaseUserContext] SignUp response received');
+        
+        if (data?.user) {
+          console.log('[SupabaseUserContext] User created successfully:', data.user.id);
           
-          const { error: profileError } = await supabase.from('users').insert({
-            id: data.user.id,
-            email: data.user.email,
-            full_name: metadata.full_name || email.split('@')[0],
-            role: metadata.role || 'viewer',
-            organization_id: defaultOrgId,
-            notification_preferences: {
-              email: true,
-              sms: false,
-              level: 'all'
+          // Check if we got a session back
+          if (data?.session) {
+            setSession(data.session);
+            console.log('[SupabaseUserContext] Session established - email confirmation is OFF');
+            return { success: true, user: data.user, session: data.session };
+          } else {
+            // No session usually means email confirmation is required
+            // But for invited users, this shouldn't happen with our trigger
+            console.log('[SupabaseUserContext] No session returned - checking if email confirmation is required');
+            
+            // Check the user's email confirmation status
+            if (data.user.email_confirmed_at) {
+              console.log('[SupabaseUserContext] Email is confirmed but no session - this is unusual');
+              return { 
+                success: true, 
+                user: data.user, 
+                session: null,
+                message: 'Account created. Please sign in.'
+              };
+            } else {
+              console.log('[SupabaseUserContext] Email confirmation required (trigger may have failed)');
+              return { 
+                success: true, 
+                user: data.user, 
+                session: null,
+                requiresEmailConfirmation: true,
+                message: 'Please check your email to confirm your account'
+              };
             }
-          });
-          
-          if (profileError) {
-            // console.error('Error creating user profile:', profileError);
-            // Don't fail signup if profile creation fails
           }
         }
         
-        return { success: true, user: data.user };
+        // No user returned - signup failed
+        console.error('[SupabaseUserContext] No user returned from signup');
+        return { success: false, error: 'Failed to create user account' };
       } catch (error) {
-        // console.error('Signup error:', error);
-        return { success: false, error: error.message };
+        console.error('[SupabaseUserContext] Signup error:', error);
+        
+        // Check for specific error cases
+        if (error.message?.includes('already registered') || error.message?.includes('already exists')) {
+          return {
+            success: false,
+            error: 'This email is already registered. Please sign in with your existing password.',
+            userExists: true
+          };
+        }
+        
+        if (error.message?.includes('invitation')) {
+          return {
+            success: false,
+            error: error.message,
+            invitationError: true
+          };
+        }
+        
+        return { success: false, error: error.message || 'Failed to create account' };
       }
     } else {
       // Mock sign up for localStorage mode
@@ -338,26 +460,56 @@ export function UserProvider({ children }) {
   };
 
   const updateUser = async (userData) => {
-    const updatedUser = {
-      ...user,
-      ...userData
-    };
-    setUser(updatedUser);
-    
-    // Update in database if using Supabase
-    if (isSupabaseMode && user?.id) {
-      const { error } = await supabase
-        .from('users')
-        .update(userData)
-        .eq('id', user.id);
+    try {
+      // Update local state first
+      const updatedUser = {
+        ...user,
+        ...userData
+      };
+      setUser(updatedUser);
       
-      if (error) {
-        // console.error('Error updating user:', error);
-        return { success: false, error: error.message };
+      // Update in database if using Supabase
+      if (isSupabaseMode && user?.id) {
+        const { error } = await supabase
+          .from('users')
+          .update(userData)
+          .eq('id', user.id);
+        
+        if (error) {
+          console.error('[SupabaseUserContext] Error updating user profile:', error);
+          // Provide more specific error messages
+          if (error.code === '42703') {
+            return { 
+              success: false, 
+              error: 'Database schema not updated. Please run migration 013_user_profile_onboarding.sql' 
+            };
+          }
+          return { success: false, error: error.message };
+        }
+        
+        // Fetch updated profile to ensure consistency
+        const { data: updatedProfile, error: fetchError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        
+        if (!fetchError && updatedProfile) {
+          setUser(updatedProfile);
+        }
+      } else if (!isSupabaseMode) {
+        // In localStorage mode, just save to localStorage
+        localStorage.setItem('princess_user', JSON.stringify(updatedUser));
       }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[SupabaseUserContext] Unexpected error in updateUser:', error);
+      return { 
+        success: false, 
+        error: error.message || 'Failed to update profile' 
+      };
     }
-    
-    return { success: true };
   };
 
   const contextValue = useMemo(() => ({

@@ -28,8 +28,10 @@ import NotificationBell from '@/components/notifications/NotificationBell';
 import ProjectSelector from '@/components/dashboard/ProjectSelector';
 import SlackIcon from '@/components/icons/SlackIcon';
 import GoogleDriveIcon from '@/components/icons/GoogleDriveIcon';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
+import { UserButton } from '@clerk/clerk-react';
 import { useProject } from '@/contexts/ProjectContext';
+import RoleIndicator from '@/components/ui/RoleIndicator';
 import { getVisibleNavigationItems, getRoleDisplayName, getRoleBadgeColor } from '@/lib/permissions';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -220,14 +222,21 @@ export default function Layout({ children, currentPageName }) {
                         {/* User Info */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <img 
-                                    src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/f603af03a_Proncess.jpg" 
-                                    className="w-10 h-10 rounded-full object-cover" 
-                                    alt="User Avatar"
+                                <UserButton 
+                                    appearance={{
+                                        elements: {
+                                            avatarBox: "w-10 h-10",
+                                            userButtonTrigger: "focus:shadow-none"
+                                        }
+                                    }}
+                                    afterSignOutUrl="/"
                                 />
-                                <div>
-                                    <p className="font-semibold text-sm">{user?.name || 'Maya Cohen'}</p>
-                                    <p className="text-xs text-gray-500">{user?.email || 'maya@email.com'}</p>
+                                <div className="flex-1">
+                                    <p className="font-semibold text-sm">{user?.full_name || user?.email?.split('@')[0] || 'User'}</p>
+                                    <p className="text-xs text-gray-500">{user?.email || 'Loading...'}</p>
+                                    <div className="mt-1">
+                                        <RoleIndicator compact={true} />
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -2,8 +2,8 @@ import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import './App.css'
 import { Toaster } from "@/components/ui/toaster"
-import { useUser } from '@/contexts/SupabaseUserContext'
-import AuthGuard from '@/guards/SupabaseAuthGuard'
+import { useUser } from '@/contexts/ClerkUserContext'
+import AuthGuard from '@/guards/ClerkAuthGuard'
 
 // Main Layout (adapts based on user role)
 import Layout from '@/pages/Layout'
@@ -25,11 +25,14 @@ import TestPage from '@/pages/TestPage'
 
 // Auth pages
 import Login from '@/pages/auth/Login'
-import InvitationSignup from '@/pages/auth/InvitationSignup'
+import SignUp from '@/pages/auth/SignUp'
+import Welcome from '@/pages/auth/Welcome'
+import ForgotPassword from '@/pages/auth/ForgotPassword'
+import ResetPassword from '@/pages/auth/ResetPassword'
+import InvitationAccept from '@/pages/auth/InvitationAccept'
 
-// Onboarding & Auth (to be created)
-// import Onboarding from '@/pages/Onboarding'
-// import InvitationAccept from '@/pages/InvitationAccept'
+// Onboarding
+import Onboarding from '@/pages/Onboarding'
 
 function App() {
   return (
@@ -41,15 +44,31 @@ function App() {
 }
 
 function AppRoutes() {
-  const { user, isAuthenticated } = useUser()
+  const { user, isAuthenticated, loading } = useUser()
   
-  // Default route based on authentication
-  const defaultRoute = isAuthenticated ? '/dashboard' : '/auth/login'
-
+  // Show loading while checking auth state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+  
   return (
     <Routes>
-      {/* Root redirect */}
-      <Route path="/" element={<Navigate to={defaultRoute} replace />} />
+      {/* Root route - Welcome landing page */}
+      <Route path="/" element={
+        <AuthGuard requireAuth={false}>
+          <Welcome />
+        </AuthGuard>
+      } />
+      
+      {/* Invitation acceptance route - using custom component for password setup */}
+      <Route path="/invitation/accept" element={<InvitationAccept />} />
       
       {/* Auth routes */}
       <Route path="/auth/login" element={
@@ -57,9 +76,31 @@ function AppRoutes() {
           <Login />
         </AuthGuard>
       } />
-      <Route path="/invitation" element={
+      <Route path="/auth/signup" element={
         <AuthGuard requireAuth={false}>
-          <InvitationSignup />
+          <SignUp />
+        </AuthGuard>
+      } />
+      <Route path="/auth/forgot-password" element={
+        <AuthGuard requireAuth={false}>
+          <ForgotPassword />
+        </AuthGuard>
+      } />
+      <Route path="/auth/reset-password" element={
+        <AuthGuard requireAuth={false}>
+          <ResetPassword />
+        </AuthGuard>
+      } />
+      <Route path="/auth/callback" element={
+        <AuthGuard requireAuth={false}>
+          <ResetPassword />
+        </AuthGuard>
+      } />
+      
+      {/* Onboarding route - requires auth but no specific role */}
+      <Route path="/onboarding" element={
+        <AuthGuard requireAuth={true}>
+          <Onboarding />
         </AuthGuard>
       } />
       
@@ -131,7 +172,7 @@ function AppRoutes() {
               onClick={() => window.location.href = '/'}
               className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-600 hover:to-indigo-700 transition-all"
             >
-              Go to Dashboard
+              Go to Home
             </button>
           </div>
         </div>

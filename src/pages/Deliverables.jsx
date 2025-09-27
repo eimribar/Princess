@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { SupabaseDeliverable, SupabaseStage } from "@/api/supabaseEntities";
 import { useProject } from '@/contexts/ProjectContext';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { useViewMode } from '@/hooks/useViewMode';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

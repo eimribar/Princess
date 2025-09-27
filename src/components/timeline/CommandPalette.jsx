@@ -43,7 +43,7 @@ import {
   Maximize2
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import scheduleRuleEngine from '@/services/scheduleRuleEngine';
 
 export default function CommandPalette({ 

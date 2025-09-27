@@ -2,9 +2,17 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import '@/index.css'
-import { UserProvider } from '@/contexts/SupabaseUserContext'
+import { ClerkProvider } from '@clerk/clerk-react'
+import { UserProvider } from '@/contexts/ClerkUserContext'
 import { ProjectProvider } from '@/contexts/ProjectContext'
 import ErrorBoundary from '@/components/ErrorBoundary'
+
+// Import Clerk Publishable Key
+const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+if (!CLERK_PUBLISHABLE_KEY) {
+  throw new Error('Missing Clerk Publishable Key - Add VITE_CLERK_PUBLISHABLE_KEY to your .env.local file')
+}
 
 // Clear any demo data on startup
 import { clearAllPrincessData } from '@/utils/clearAllData';
@@ -16,6 +24,10 @@ import { diagnoseStage } from '@/utils/diagnoseStage';
 import { syncStageDeliverables } from '@/utils/syncStageDeliverables';
 // Import specific stages fix
 import { fixSpecificStages } from '@/utils/fixSpecificStages';
+// Import invitation flow test utility
+import { testInvitationFlow } from '@/utils/testInvitationFlow';
+// Import fix for missing team members
+import { fixMissingTeamMembers } from '@/utils/fixMissingTeamMembers';
 
 // Check and clear demo data if it exists
 const checkAndClearDemoData = () => {
@@ -43,14 +55,17 @@ if (import.meta.env.DEV) {
   import('@/utils/testTeamOperations').catch(console.error);
   import('@/utils/setUserRole').catch(console.error);
   import('@/utils/testProjectIsolation').catch(console.error);
+  import('@/utils/debugSupabaseAuth').catch(console.error);
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <ErrorBoundary>
-    <UserProvider>
-      <ProjectProvider>
-        <App />
-      </ProjectProvider>
-    </UserProvider>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+      <UserProvider>
+        <ProjectProvider>
+          <App />
+        </ProjectProvider>
+      </UserProvider>
+    </ClerkProvider>
   </ErrorBoundary>
 ) 

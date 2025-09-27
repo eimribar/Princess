@@ -73,20 +73,8 @@ class SupabaseService {
     }
 
     try {
-      // Ensure we have a valid session (will refresh if needed)
-      const isAuthenticated = await ensureAuthenticated();
-      
-      if (!isAuthenticated) {
-        console.log('Not authenticated or session invalid for read.');
-        console.log('Attempting to refresh session...');
-        
-        const { success } = await refreshSession();
-        if (!success) {
-          console.log('Could not refresh session. Using localStorage for read.');
-          return this.getLocalData('teamMembers', orderBy);
-        }
-      }
-
+      // Skip Supabase auth check - we're using Clerk for authentication
+      // The service role key allows direct database access
       let query = this.supabase
         .from('team_members')
         .select('*');
@@ -109,24 +97,6 @@ class SupabaseService {
           details: error.details
         });
         
-        if (error.code === 'PGRST301') {
-          console.log('JWT error - session may be expired, attempting refresh');
-          const { success } = await refreshSession();
-          if (success) {
-            console.log('Session refreshed, retrying fetch');
-            // Retry once after refresh
-            const retryQuery = this.supabase.from('team_members').select('*');
-            if (orderBy) {
-              const isDescending = orderBy.startsWith('-');
-              const column = isDescending ? orderBy.substring(1) : orderBy;
-              retryQuery.order(column, { ascending: !isDescending });
-            }
-            const { data: retryData, error: retryError } = await retryQuery;
-            if (!retryError) {
-              return retryData || [];
-            }
-          }
-        }
         // Fallback to localStorage
         return this.getLocalData('teamMembers', orderBy);
       }
@@ -144,20 +114,7 @@ class SupabaseService {
     }
 
     try {
-      // Ensure we have a valid session (will refresh if needed)
-      const isAuthenticated = await ensureAuthenticated();
-      
-      if (!isAuthenticated) {
-        console.log('Not authenticated or session invalid for read by id.');
-        console.log('Attempting to refresh session...');
-        
-        const { success } = await refreshSession();
-        if (!success) {
-          console.log('Could not refresh session. Using localStorage for read by id.');
-          return this.getLocalDataById('teamMembers', id);
-        }
-      }
-      
+      // Skip Supabase auth check - we're using Clerk for authentication
       const { data, error } = await this.supabase
         .from('team_members')
         .select('*')
@@ -173,23 +130,6 @@ class SupabaseService {
           details: error.details,
           memberId: id
         });
-        
-        if (error.code === 'PGRST301') {
-          console.log('JWT error - session may be expired, attempting refresh');
-          const { success } = await refreshSession();
-          if (success) {
-            console.log('Session refreshed, retrying fetch');
-            // Retry once after refresh
-            const { data: retryData, error: retryError } = await this.supabase
-              .from('team_members')
-              .select('*')
-              .eq('id', id)
-              .single();
-            if (!retryError) {
-              return retryData;
-            }
-          }
-        }
         
         return this.getLocalDataById('teamMembers', id);
       }

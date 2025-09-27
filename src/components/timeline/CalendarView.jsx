@@ -36,7 +36,7 @@ import {
   subDays
 } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { cn } from '@/lib/utils';
 import {
   Popover,

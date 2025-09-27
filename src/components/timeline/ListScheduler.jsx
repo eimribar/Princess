@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO, addDays } from 'date-fns';
 import scheduleRuleEngine from '@/services/scheduleRuleEngine';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 

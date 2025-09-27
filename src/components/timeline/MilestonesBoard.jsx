@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, addMonths, isSameMonth, isWithinInterval } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { cn } from '@/lib/utils';
 
 export default function MilestonesBoard({ 

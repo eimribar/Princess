@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import AuthGuard from './AuthGuard';
 
 // For now, use existing components and layouts

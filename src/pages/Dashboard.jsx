@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import dataService from "@/services/dataService";
 import stageManager from "@/api/stageManager";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProject } from "@/contexts/ProjectContext";
-import { useUser } from "@/contexts/SupabaseUserContext";
+import { useUser } from "@/contexts/ClerkUserContext";
 import { useViewMode } from "@/hooks/useViewMode";
 import dataFilterService from "@/services/dataFilterService";
 import { useAbortableRequest } from "@/services/abortableRequest";
@@ -28,6 +28,15 @@ export default function Dashboard() {
   // Get user context and view mode for role-based rendering
   const { user } = useUser();
   const { isClient, isAgency, isAdmin, canEdit, isDecisionMaker } = useViewMode();
+  const navigate = useNavigate();
+  
+  // Safety check: redirect to onboarding if user needs it
+  useEffect(() => {
+    if (user?.needs_onboarding === true) {
+      console.log('User needs onboarding, redirecting...');
+      navigate('/onboarding');
+    }
+  }, [user?.needs_onboarding, navigate]);
   
   // Use global state from ProjectContext
   const { 

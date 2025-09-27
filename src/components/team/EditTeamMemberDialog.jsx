@@ -17,7 +17,7 @@ import { TeamMember } from "@/api/entities";
 import { UploadFile } from "@/api/integrations";
 import { Upload, Loader2, X, Trash2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { canManageTeamMember } from '@/lib/permissions';
 import { useToast } from "@/components/ui/use-toast";
 

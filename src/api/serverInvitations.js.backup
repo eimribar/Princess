@@ -1,0 +1,188 @@
+import { createClerkClient } from '@clerk/backend';
+import { supabase } from '../lib/supabase';
+
+// Initialize Clerk Backend Client
+const clerkClient = createClerkClient({
+  secretKey: import.meta.env.VITE_CLERK_SECRET_KEY || process.env.CLERK_SECRET_KEY
+});
+
+/**
+ * Create a Clerk invitation with metadata and track it in our database
+ * @param {Object} params - Invitation parameters
+ * @param {string} params.email - Email address to invite
+ * @param {string} params.role - User role (client, agency, admin)
+ * @param {string} params.projectId - Project ID for client invitations
+ * @param {string} params.organizationId - Organization ID
+ * @param {boolean} params.isDecisionMaker - Whether user is a decision maker
+ * @param {string} params.invitedBy - ID of user sending invitation
+ * @param {Object} params.metadata - Additional metadata (firstName, lastName, message)
+ */
+export async function createInvitation({
+  email,
+  role = 'client',
+  projectId,
+  organizationId,
+  isDecisionMaker = false,
+  invitedBy,
+  metadata = {}
+}) {
+  try {
+    // Step 1: Check decision maker limit if applicable
+    if (isDecisionMaker && projectId) {
+      const { data: existingDecisionMakers, error: countError } = await supabase
+        .from('team_members')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('team_type', 'client')
+        .eq('is_decision_maker', true);
+
+      if (!countError && existingDecisionMakers && existingDecisionMakers.length >= 2) {
+        throw new Error('Maximum number of decision makers (2) reached for this project. Please remove an existing decision maker first.');
+      }
+    }
+
+    // Step 2: Create Clerk invitation with metadata
+    const invitation = await clerkClient.invitations.createInvitation({
+      emailAddress: email,
+      publicMetadata: {
+        role,
+        project_id: projectId,
+        organization_id: organizationId,
+        is_decision_maker: isDecisionMaker,
+        invited_by: invitedBy,
+        ...metadata
+      },
+      redirectUrl: `${window.location.origin}/welcome?invitation=__invitation_token__`,
+      notify: true // Send email automatically
+    });
+
+    // Step 3: Track invitation in our database
+    const { data: tracking, error: trackingError } = await supabase
+      .from('invitation_tracking')
+      .insert({
+        clerk_invitation_id: invitation.id,
+        email,
+        role,
+        is_decision_maker: isDecisionMaker,
+        project_id: projectId,
+        organization_id: organizationId,
+        invited_by: invitedBy,
+        status: 'pending',
+        metadata
+      })
+      .select()
+      .single();
+
+    if (trackingError) {
+      console.error('Error tracking invitation:', trackingError);
+      // Don't fail the whole operation, but log the error
+    }
+
+    return {
+      success: true,
+      invitationId: invitation.id,
+      invitationUrl: `${window.location.origin}/welcome/${invitation.id}`,
+      tracking
+    };
+  } catch (error) {
+    console.error('Error creating invitation:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to create invitation'
+    };
+  }
+}
+
+/**
+ * Revoke a Clerk invitation
+ * @param {string} invitationId - Clerk invitation ID
+ */
+export async function revokeInvitation(invitationId) {
+  try {
+    // Revoke in Clerk
+    await clerkClient.invitations.revokeInvitation(invitationId);
+
+    // Update tracking status
+    await supabase
+      .from('invitation_tracking')
+      .update({ status: 'revoked' })
+      .eq('clerk_invitation_id', invitationId);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error revoking invitation:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to revoke invitation'
+    };
+  }
+}
+
+/**
+ * Get invitation details from tracking table
+ * @param {string} invitationId - Clerk invitation ID
+ */
+export async function getInvitationDetails(invitationId) {
+  try {
+    const { data, error } = await supabase
+      .from('invitation_tracking')
+      .select(`
+        *,
+        projects (
+          id,
+          name,
+          client_name
+        ),
+        users!invited_by (
+          id,
+          full_name,
+          email
+        )
+      `)
+      .eq('clerk_invitation_id', invitationId)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      success: true,
+      invitation: data
+    };
+  } catch (error) {
+    console.error('Error getting invitation details:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to get invitation details'
+    };
+  }
+}
+
+/**
+ * Update decision maker when swapping
+ * @param {string} projectId - Project ID
+ * @param {string} oldDecisionMakerId - Team member ID to remove decision maker role
+ * @param {string} newEmail - Email of new decision maker
+ */
+export async function swapDecisionMaker(projectId, oldDecisionMakerId, newEmail) {
+  try {
+    // Remove decision maker role from existing member
+    const { error: updateError } = await supabase
+      .from('team_members')
+      .update({ is_decision_maker: false })
+      .eq('id', oldDecisionMakerId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error swapping decision maker:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to swap decision maker'
+    };
+  }
+}

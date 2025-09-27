@@ -1,4 +1,4 @@
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { useProject } from '@/contexts/ProjectContext';
 
 /**

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Deliverable, Project } from "@/api/entities";
 import { useParams } from 'react-router-dom';
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
 import dataFilterService from '@/services/dataFilterService';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

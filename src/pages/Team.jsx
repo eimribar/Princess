@@ -14,8 +14,6 @@ import {
   Search,
   Grid3X3,
   List,
-  ChevronLeft,
-  ChevronRight,
   Crown,
   Eye,
   Edit,
@@ -24,7 +22,8 @@ import {
 import { motion } from "framer-motion";
 import TeamMemberModal from "../components/team/TeamMemberModal";
 import InviteTeamMemberDialog from "../components/team/InviteTeamMemberDialog";
-import { useUser } from '@/contexts/SupabaseUserContext';
+import { useUser } from '@/contexts/ClerkUserContext';
+import { useProject } from '@/contexts/ProjectContext';
 import { canManageTeamMember } from '@/lib/permissions';
 import { useToast } from "@/components/ui/use-toast";
 import { checkAndMigrate, migrateTeamMembersToSupabase } from '@/utils/migrateToSupabase';
@@ -47,6 +46,7 @@ import {
 
 export default function Team() {
   const { user } = useUser();
+  const { currentProjectId } = useProject();
   const { toast } = useToast();
   
   const [teamMembers, setTeamMembers] = useState([]);
@@ -58,13 +58,11 @@ export default function Team() {
   const [selectedMember, setSelectedMember] = useState(null);
   const [modalMode, setModalMode] = useState('view'); // 'view', 'edit', or 'add'
   
-  // State for search, filter and pagination
+  // State for search, filter (removed pagination)
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [teamTypeFilter, setTeamTypeFilter] = useState("agency"); // New state for team type tabs
   const [viewMode, setViewMode] = useState("grid"); // grid or list
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 7; // Match the design showing 7 items
 
   useEffect(() => {
     // Check for migration on component mount
@@ -86,9 +84,16 @@ export default function Team() {
       // Race between data loading and timeout
       const data = await Promise.race([dataPromise, timeoutPromise]);
       
-      // Load team members from the database
-      // Use team members data as-is without auto-generating fields
-      setTeamMembers(data || []);
+      // Remove duplicates based on email (keep first occurrence)
+      const uniqueMembers = data ? data.reduce((acc, member) => {
+        const exists = acc.find(m => m.email === member.email);
+        if (!exists) {
+          acc.push(member);
+        }
+        return acc;
+      }, []) : [];
+      
+      setTeamMembers(uniqueMembers);
     } catch (error) {
       console.error("Error loading team members:", error);
       // Still show existing data if refresh fails
@@ -214,17 +219,6 @@ export default function Team() {
     
     return matchesTeamType && matchesSearch && matchesRole;
   });
-  
-  // Pagination
-  const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedMembers = filteredMembers.slice(startIndex, endIndex);
-  
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, roleFilter, teamTypeFilter]);
 
   if (isLoading) {
     return (
@@ -244,25 +238,40 @@ export default function Team() {
         <header className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Team Members</h1>
-            <p className="text-gray-500 mt-1">Manage your team members and their roles.</p>
+            <p className="text-gray-500 mt-1">
+              {teamTypeFilter === 'client' 
+                ? 'Manage your client team members and decision makers.'
+                : 'Manage your agency team members and their roles.'}
+            </p>
           </div>
-          {canManageTeamMember(user, {}) && (
+          {/* Show different buttons based on team type and user role */}
+          {teamTypeFilter === 'agency' && canManageTeamMember(user, {}) && (
             <div className="flex items-center space-x-2">
               <button 
                 onClick={() => setIsInviteDialogOpen(true)}
-                className="bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg border border-gray-300 flex items-center shadow-sm hover:bg-gray-50 transition-colors"
+                className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-indigo-700 transition-colors"
               >
                 <UserPlus className="w-4 h-4 mr-2" />
                 Invite Team Member
               </button>
               <button 
                 onClick={handleAddMember}
-                className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-indigo-700 transition-colors"
+                className="bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg border border-gray-300 flex items-center shadow-sm hover:bg-gray-50 transition-colors"
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Add New User
+                Add Without Invitation
               </button>
             </div>
+          )}
+          {/* For client team, only show invite button for decision makers */}
+          {teamTypeFilter === 'client' && (user?.is_decision_maker || user?.role === 'admin' || user?.role === 'agency') && (
+            <button 
+              onClick={() => setIsInviteDialogOpen(true)}
+              className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-indigo-700 transition-colors"
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Invite Team Member
+            </button>
           )}
         </header>
 
@@ -326,9 +335,9 @@ export default function Team() {
             </div>
           </div>
 
-          {/* Team Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-6">
-            {paginatedMembers.map((member, index) => {
+          {/* Team Grid - Updated with more columns and smaller cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 p-6">
+            {filteredMembers.map((member, index) => {
               const badge = getRoleBadge(member);
               return (
                 <motion.div
@@ -336,38 +345,38 @@ export default function Team() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col items-center text-center hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer"
+                  className="bg-white border border-gray-200 rounded-lg p-3 flex flex-col items-center text-center hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer"
                   onClick={() => handleViewMember(member)}
                 >
                   {member.profile_image ? (
                     <img 
                       alt={member.name}
-                      className="w-24 h-24 rounded-full mb-4 object-cover"
+                      className="w-16 h-16 rounded-full mb-3 object-cover"
                       src={member.profile_image}
                     />
                   ) : (
-                    <div className="w-24 h-24 rounded-full mb-4 bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center text-white text-2xl font-semibold">
+                    <div className="w-16 h-16 rounded-full mb-3 bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center text-white text-lg font-semibold">
                       {getInitials(member.name)}
                     </div>
                   )}
-                  <h3 className="text-lg font-semibold text-gray-900">{member.name}</h3>
-                  <p className="text-gray-500 text-sm mb-2">{member.role}</p>
-                  <span className={`${badge.color} text-xs font-medium px-2.5 py-0.5 rounded-full mb-4`}>
+                  <h3 className="text-sm font-semibold text-gray-900">{member.name}</h3>
+                  <p className="text-gray-500 text-xs mb-1">{member.role}</p>
+                  <span className={`${badge.color} text-xs font-medium px-2 py-0.5 rounded-full mb-2`}>
                     {badge.label}
                   </span>
-                  <div className="flex space-x-3 mt-auto">
+                  <div className="flex space-x-2 mt-auto">
                     <a 
                       className="text-gray-400 hover:text-indigo-600 transition-colors cursor-pointer"
                       href={`mailto:${member.email}`}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Mail className="w-5 h-5" />
+                      <Mail className="w-4 h-4" />
                     </a>
                     <a 
                       className="text-gray-400 hover:text-indigo-600 transition-colors cursor-pointer"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Phone className="w-5 h-5" />
+                      <Phone className="w-4 h-4" />
                     </a>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -375,7 +384,7 @@ export default function Team() {
                           className="text-gray-400 hover:text-indigo-600 transition-colors"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MoreVertical className="w-5 h-5" />
+                          <MoreVertical className="w-4 h-4" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -418,60 +427,19 @@ export default function Team() {
               );
             })}
             
-            {/* Add Member Card */}
-            {canManageTeamMember(user, {}) && paginatedMembers.length < itemsPerPage && (
+            {/* Add Member Card - Updated to match smaller size */}
+            {canManageTeamMember(user, {}) && (
               <div 
                 onClick={handleAddMember}
-                className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 hover:border-indigo-500 transition-all duration-300"
+                className="border-2 border-dashed border-gray-300 rounded-lg p-3 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50 hover:border-indigo-500 transition-all duration-300 min-h-[200px]"
               >
-                <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mb-4">
-                  <Plus className="w-8 h-8 text-gray-500" />
+                <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center mb-3">
+                  <Plus className="w-6 h-6 text-gray-500" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Add Member</h3>
-                <p className="text-gray-500 text-sm">Add a new team member</p>
+                <h3 className="text-sm font-semibold text-gray-900">Add Member</h3>
+                <p className="text-gray-500 text-xs">Add a new team member</p>
               </div>
             )}
-          </div>
-
-          {/* Pagination */}
-          <div className="p-4 border-t border-gray-200 flex justify-between items-center">
-            <p className="text-sm text-gray-600">
-              Showing <span className="font-semibold">{Math.min(startIndex + 1, filteredMembers.length)}</span> to{' '}
-              <span className="font-semibold">{Math.min(endIndex, filteredMembers.length)}</span> of{' '}
-              <span className="font-semibold">{filteredMembers.length}</span> results
-            </p>
-            <div className="flex items-center space-x-1">
-              <button 
-                className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              {[...Array(totalPages)].map((_, i) => {
-                const page = i + 1;
-                return (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                      currentPage === page
-                        ? 'text-white bg-indigo-600'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                );
-              })}
-              <button 
-                className="p-2 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                disabled={currentPage === totalPages || totalPages === 0}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
           </div>
         </div>
       </main>
@@ -489,6 +457,7 @@ export default function Team() {
       <InviteTeamMemberDialog
         open={isInviteDialogOpen}
         onOpenChange={setIsInviteDialogOpen}
+        projectId={currentProjectId}
       />
     </div>
   );
