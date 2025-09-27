@@ -25,12 +25,12 @@ import OutofScope from '@/pages/OutofScope'
 import TestPage from '@/pages/TestPage'
 
 // Auth pages
-import Login from '@/pages/auth/Login'
-import SignUp from '@/pages/auth/SignUp'
-import Welcome from '@/pages/auth/Welcome'
-import ForgotPassword from '@/pages/auth/ForgotPassword'
-import ResetPassword from '@/pages/auth/ResetPassword'
-import InvitationAccept from '@/pages/auth/InvitationAccept'
+import Login from '@/pages/auth/Login.jsx'
+import SignUp from '@/pages/auth/SignUp.jsx'
+import Welcome from '@/pages/auth/Welcome.jsx'
+import ForgotPassword from '@/pages/auth/ForgotPassword.jsx'
+import ResetPassword from '@/pages/auth/ResetPassword.jsx'
+import InvitationAccept from '@/pages/auth/InvitationAccept.jsx'
 
 // Onboarding
 import Onboarding from '@/pages/Onboarding'
