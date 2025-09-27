@@ -1,468 +1,587 @@
-
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import dataService from "@/services/dataService";
-import stageManager from "@/api/stageManager";
-import { motion, AnimatePresence } from "framer-motion";
-import { useProject } from "@/contexts/ProjectContext";
-import { useUser } from "@/contexts/ClerkUserContext";
-import { useViewMode } from "@/hooks/useViewMode";
-import dataFilterService from "@/services/dataFilterService";
-import { useAbortableRequest } from "@/services/abortableRequest";
-import { debounce } from 'lodash';
-
-import VisualTimeline from "../components/dashboard/VisualTimeline";
-import PremiumRequiresAttention from "../components/dashboard/PremiumRequiresAttention";
-import PremiumDeliverablesStatus from "../components/dashboard/PremiumDeliverablesStatus";
-import StageSidebarV2 from "../components/dashboard/StageSidebarV2";
-import { Progress } from "@/components/ui/progress";
-import { Loader2, AlertCircle, Info, CalendarDays } from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { differenceInDays } from "date-fns";
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useProject } from '@/contexts/ProjectContext';
+import { useUser } from '@/contexts/ClerkUserContext';
+import { 
+  Layers,
+  FileText,
+  Bell,
+  CheckSquare,
+  Loader2,
+  Info,
+  Activity,
+  CheckCircle,
+  ArrowRight,
+  Clock as ClockIcon
+} from 'lucide-react';
+import { NotificationEntity } from '@/components/notifications/NotificationCenter';
+import { differenceInDays, formatDistanceToNow } from 'date-fns';
+import { SupabaseTeamMember } from '@/api/supabaseEntities';
+import { cn } from '@/lib/utils';
 
 export default function Dashboard() {
-  // Get project ID from URL if present
   const { projectId } = useParams();
-  
-  // Get user context and view mode for role-based rendering
-  const { user } = useUser();
-  const { isClient, isAgency, isAdmin, canEdit, isDecisionMaker } = useViewMode();
   const navigate = useNavigate();
-  
-  // Safety check: redirect to onboarding if user needs it
-  useEffect(() => {
-    if (user?.needs_onboarding === true) {
-      console.log('User needs onboarding, redirecting...');
-      navigate('/onboarding');
-    }
-  }, [user?.needs_onboarding, navigate]);
-  
-  // Use global state from ProjectContext
+  const { user } = useUser();
   const { 
-    currentProjectId,
-    project: contextProject,
-    stages: contextStages, 
-    deliverables: contextDeliverables, 
-    teamMembers: contextTeamMembers,
-    isLoading: contextLoading,
-    updateStage: globalUpdateStage,
-    updateStageOptimistic,
-    reloadData: reloadProjectData,
-    switchProject
+    project, 
+    stages, 
+    deliverables,
+    isLoading 
   } = useProject();
   
-  // Local state for dashboard-specific data
-  const [project, setProject] = useState(contextProject);
-  const [stages, setStages] = useState(contextStages);
-  const [comments, setComments] = useState([]);
-  const [deliverables, setDeliverables] = useState(contextDeliverables);
-  const [teamMembers, setTeamMembers] = useState(contextTeamMembers);
-  const [outOfScopeRequests, setOutOfScopeRequests] = useState([]);
-  const [selectedStageId, setSelectedStageId] = useState(null);
-  const [realProgress, setRealProgress] = useState(0);
-  const [lastNotificationTime, setLastNotificationTime] = useState(0);
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
-  const { toast } = useToast();
-  const abortableRequest = useAbortableRequest();
-  const loadDataAbortRef = useRef(null);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
   
-  // Sync with context when it changes
+  // Load notifications and team data
   useEffect(() => {
-    setProject(contextProject);
-    setStages(contextStages);
-    setDeliverables(contextDeliverables);
-    setTeamMembers(contextTeamMembers);
-    
-    // Calculate progress when context data updates (especially on initial load/refresh)
-    if (contextStages.length > 0 && currentProjectId) {
-      stageManager.calculateRealProgress(currentProjectId)
-        .then(progress => {
-          console.log('Progress calculated from context update:', {
-            projectId: currentProjectId,
-            stageCount: contextStages.length,
-            calculatedProgress: progress
-          });
-          setRealProgress(progress);
-        })
-        .catch(error => {
-          console.error('Failed to calculate initial progress:', error);
-          setRealProgress(0);
-        });
-    } else if (contextStages.length === 0) {
-      // No stages = 0% progress
-      setRealProgress(0);
-    }
-  }, [contextProject, contextStages, contextDeliverables, contextTeamMembers, currentProjectId]);
-
-  // Handle project switching from URL
-  useEffect(() => {
-    if (projectId && projectId !== currentProjectId) {
-      switchProject(projectId);
-    }
-  }, [projectId, currentProjectId, switchProject]);
-  
-  // Ensure progress is calculated on initial mount if stages are already loaded
-  useEffect(() => {
-    // This handles the case where ProjectContext already has data on mount
-    if (realProgress === 0 && stages.length > 0 && currentProjectId) {
-      console.log('Calculating initial progress on mount');
-      stageManager.calculateRealProgress(currentProjectId)
-        .then(progress => {
-          console.log('Initial mount progress calculated:', progress);
-          setRealProgress(progress);
-        })
-        .catch(error => {
-          console.error('Failed to calculate mount progress:', error);
-        });
-    }
-  }, []); // Run once on mount
-
-  const loadData = useCallback(async () => {
-    // Abort any previous load request
-    if (loadDataAbortRef.current) {
-      loadDataAbortRef.current.abort();
-    }
-    
-    // Create new AbortController for this request
-    const abortController = new AbortController();
-    loadDataAbortRef.current = abortController;
-    
-    // setIsLoading(true); // Removed - using contextLoading
-    try {
-      // Check if already aborted
-      if (abortController.signal.aborted) {
-        return;
-      }
-      
-      // Use unified data service
-      let projectData, stagesData, commentsData, deliverablesData, teamMembersData, outOfScopeData;
-      
-      if (projectId) {
-        // Load specific project data
-        const data = await dataService.loadProjectData(projectId);
-        if (abortController.signal.aborted) return;
-        projectData = data.project;
-        stagesData = data.stages;
-        deliverablesData = data.deliverables;
-        commentsData = data.comments;
-        teamMembersData = data.teamMembers;
-        outOfScopeData = data.outOfScopeRequests;
-      } else {
-        // Load general dashboard data
-        const data = await dataService.loadDashboardData();
-        if (abortController.signal.aborted) return;
-        projectData = data.project;
-        stagesData = data.stages;
-        deliverablesData = data.deliverables;
-        commentsData = [];
-        teamMembersData = data.teamMembers;
-        outOfScopeData = [];
-      }
-      
-      // Apply role-based filtering for clients
-      const filteredStages = dataFilterService.filterStages(stagesData || [], user);
-      const filteredDeliverables = dataFilterService.filterDeliverables(deliverablesData || [], user);
-      const filteredComments = dataFilterService.filterComments(commentsData || [], user);
-      const filteredTeamMembers = dataFilterService.filterTeamMembers(teamMembersData || [], user);
-      
-      setProject(projectData);
-      setStages(filteredStages);
-      setComments(filteredComments);
-      setDeliverables(filteredDeliverables);
-      setTeamMembers(filteredTeamMembers);
-      
-      // Clients don't see out-of-scope requests
-      if (!isClient) {
-        setOutOfScopeRequests(outOfScopeData || []);
-      }
-
-      // Calculate real progress using stage manager with project filtering
-      const projectIdToUse = projectId || projectData?.id;
-      if (projectIdToUse) {
-        const progress = await stageManager.calculateRealProgress(projectIdToUse);
-        if (!abortController.signal.aborted) {
-          setRealProgress(progress);
-        }
-      } else {
-        setRealProgress(0); // No project, no progress
-      }
-    } catch (error) {
-      // Ignore abort errors
-      if (error.name !== 'AbortError') {
-        console.error("Error loading data:", error);
-      }
-    } finally {
-      // Only set loading false if not aborted
-      if (!abortController.signal.aborted) {
-        // setIsLoading(false); // Removed - using contextLoading
-      }
-    }
-  }, [user, isClient, projectId]);
-
-  useEffect(() => {
-    // Load comments (not loaded by ProjectContext)
-    loadComments();
-
-    // Subscribe to stage manager changes for NOTIFICATIONS ONLY
-    // NO DATA RELOADS - trust the optimistic updates from ProjectContext
-    const unsubscribe = stageManager.subscribe(async (changes) => {
-      
-      // Only show notifications for user-initiated actions
-      if (changes.isUserAction !== false) {
-        // Show toast notification for stage changes with auto-dismiss
-        if (changes.type === 'stage_completed') {
-          toast({
-            title: "Stage Completed!",
-            description: `${changes.stage.name} has been completed.`,
-            duration: 3000,
-          });
-          
-          // Calculate progress locally without database query
-          const completedCount = stages.filter(s => s.status === 'completed').length + 1;
-          const newProgress = Math.round((completedCount / stages.length) * 100);
-          setRealProgress(newProgress);
-          
-        } else if (changes.type === 'stage_started') {
-          toast({
-            title: "Stage Started",
-            description: `Work has begun on ${changes.stage.name}`,
-            duration: 3000,
-          });
-        }
-      }
-      
-      // NO DATA RELOADS - removed all the database queries
-      // The ProjectContext handles all state updates optimistically
-    });
-
-    // Cleanup function
-    return () => {
-      unsubscribe();
-      // Abort any pending requests on unmount
-      if (loadDataAbortRef.current) {
-        loadDataAbortRef.current.abort();
+    const loadDashboardData = async () => {
+      try {
+        // Load notifications
+        const allNotifications = await NotificationEntity.list();
+        // Filter for current project
+        const projectNotifications = allNotifications.filter(n => 
+          n.data?.project_id === projectId || 
+          n.data?.projectId === projectId
+        );
+        setUnreadNotificationCount(projectNotifications.filter(n => !n.read).length);
+        
+        // Convert recent notifications to activities
+        const activities = projectNotifications
+          .slice(0, 5)
+          .map(n => ({
+            id: n.id,
+            user: n.data?.user_name || 'System',
+            action: n.title,
+            target: n.data?.deliverable_name || n.data?.stage_name || '',
+            time: n.created_at,
+            type: n.type
+          }));
+        setRecentActivities(activities);
+        
+        // Load team members for current project
+        const members = await SupabaseTeamMember.filter({ project_id: projectId });
+        setTeamMembers(members);
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
       }
     };
-  }, [loadData, toast, lastNotificationTime, projectId]);
-
-  // Debounced progress calculation for performance
-  const calculateProjectProgress = useMemo(
-    () => debounce(() => {
-      if (stages.length === 0) return 0;
-      const completedCount = stages.filter(s => s.status === 'completed').length;
-      const progress = Math.round((completedCount / stages.length) * 100);
-      setRealProgress(progress);
-      return progress;
-    }, 300),
-    [stages]
-  );
-  
-  // Trigger progress calculation when stages change
-  useEffect(() => {
-    calculateProjectProgress();
-  }, [stages, calculateProjectProgress]);
-
-  const projectProgress = realProgress;
-
-  const handleStageClick = (stageId) => {
-    setSelectedStageId(stageId);
-  };
-  
-  const handleCloseSidebar = () => {
-    setSelectedStageId(null);
-  };
-
-  const loadComments = async () => {
-    try {
-      // CRITICAL FIX: Load only project-specific comments
-      const currentProjectId = projectId || project?.id;
-      if (!currentProjectId) {
-        setComments([]);
-        return;
-      }
-      
-      const commentsData = await dataService.getProjectComments(currentProjectId, '-created_at');
-      const filteredComments = dataFilterService.filterComments(commentsData || [], user);
-      setComments(filteredComments);
-    } catch (error) {
-      console.error('Error loading comments:', error);
-    }
-  };
-
-  const handleStageUpdate = async (stageId, updates) => {
-    // Use optimistic update for instant UI response
-    if (stageId && updates) {
-      // Use optimistic update - NO RELOADS
-      await updateStageOptimistic(stageId, updates);
-      
-      // Calculate progress locally if status changed
-      if (updates.status) {
-        // Use local state for instant calculation
-        const updatedStages = stages.map(s => 
-          s.id === stageId ? { ...s, ...updates } : s
-        );
-        const completedCount = updatedStages.filter(s => s.status === 'completed').length;
-        const newProgress = Math.round((completedCount / updatedStages.length) * 100);
-        setRealProgress(newProgress);
-        
-        // Only load comments if it's a completion (might have system comment)
-        if (updates.status === 'completed') {
-          // Debounce comment loading to avoid rapid reloads
-          setTimeout(() => loadComments(), 500);
-        }
-      }
-    }
-    // NO FALLBACK RELOADS - trust the optimistic update
-  };
-
-
-  const handleAddComment = async (content) => {
-    if (!selectedStageId) return;
-    const stage = stages.find(s => s.id === selectedStageId);
-    if (!stage) return;
     
-    await dataService.createComment({
-      project_id: stage.project_id,
-      stage_id: stage.id,
-      content: content,
-      author_name: user?.name || "Current User",
-      author_email: user?.email || "user@deutschco.com", 
-    });
+    if (projectId) {
+      loadDashboardData();
+    }
+  }, [projectId]);
+  
+  // Calculate metrics
+  const metrics = useMemo(() => {
+    if (!stages || !deliverables) {
+      return {
+        activeProjects: 1,
+        deliverablesInProgress: 0,
+        pendingApprovals: 0,
+        totalStages: 0,
+        notStartedStages: 0,
+        inProgressStages: 0,
+        blockedStages: 0,
+        completedStages: 0,
+        deliverablesByStatus: {
+          draft: 0,
+          wip: 0,
+          submitted: 0,
+          approved: 0,
+          declined: 0
+        },
+        totalDeliverables: 0
+      };
+    }
     
-    // Refresh comments
-    const updatedComments = await dataService.getComments('-created_at');
-    setComments(updatedComments);
+    const deliverablesInProgress = deliverables.filter(d => 
+      ['draft', 'wip', 'submitted'].includes(d.status)
+    ).length;
+    const pendingApprovals = deliverables.filter(d => d.status === 'submitted').length;
+    const notStartedStages = stages.filter(s => s.status === 'not_ready' || s.status === 'not_started').length;
+    const inProgressStages = stages.filter(s => s.status === 'in_progress').length;
+    const blockedStages = stages.filter(s => s.status === 'blocked').length;
+    const completedStages = stages.filter(s => s.status === 'completed').length;
+    const totalStages = stages.length;
+    
+    // Calculate deliverables breakdown
+    const deliverablesByStatus = {
+      draft: deliverables.filter(d => d.status === 'draft').length,
+      wip: deliverables.filter(d => d.status === 'wip').length,
+      submitted: deliverables.filter(d => d.status === 'submitted').length,
+      approved: deliverables.filter(d => d.status === 'approved').length,
+      declined: deliverables.filter(d => d.status === 'declined').length
+    };
+    
+    return {
+      activeProjects: 1,
+      deliverablesInProgress,
+      pendingApprovals,
+      totalStages,
+      notStartedStages,
+      inProgressStages,
+      blockedStages,
+      completedStages,
+      deliverablesByStatus,
+      totalDeliverables: deliverables.length
+    };
+  }, [stages, deliverables]);
+  
+  // Calculate percentages
+  const getProgressPercentage = (value) => {
+    if (metrics.totalStages === 0) return 0;
+    return Math.min(100, Math.round((value / metrics.totalStages) * 100));
   };
-
-  const selectedStage = selectedStageId ? stages.find(s => s.id === selectedStageId) : null;
-  const stageComments = selectedStageId ? comments.filter(c => c.stage_id === selectedStageId) : [];
-
-  // Use contextLoading instead of local isLoading
-  if (contextLoading) {
+  
+  // Get urgent actions
+  const urgentActions = useMemo(() => {
+    const actions = [];
+    
+    if (deliverables) {
+      const today = new Date();
+      
+      deliverables
+        .filter(d => d.status === 'submitted' || d.deadline)
+        .forEach(d => {
+          let description = '';
+          
+          if (d.status === 'submitted') {
+            description = 'Awaiting approval';
+          } else if (d.deadline) {
+            const daysUntilDeadline = differenceInDays(new Date(d.deadline), today);
+            if (daysUntilDeadline <= 5 && daysUntilDeadline >= 0) {
+              description = `Due in ${daysUntilDeadline} day${daysUntilDeadline === 1 ? '' : 's'}`;
+            } else {
+              return;
+            }
+          }
+          
+          actions.push({
+            id: d.id,
+            title: d.status === 'submitted' ? `Approve ${d.name}` : d.name,
+            description,
+            action: () => navigate(`/deliverables/${d.id}`)
+          });
+        });
+    }
+    
+    return actions.slice(0, 3);
+  }, [deliverables, navigate]);
+  
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <Loader2 className="w-12 h-12 text-slate-400 animate-spin" />
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
       </div>
     );
   }
-
+  
   return (
-    <div className="flex h-screen">
-      <div className="flex-1 overflow-y-auto min-w-0">
-        <div className="p-8 lg:p-12 space-y-10">
-          {/* Client Welcome Message */}
-          {isClient && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6"
+    <div className="p-8 max-w-7xl mx-auto bg-slate-50 dark:bg-slate-900 min-h-screen">
+      {/* Header */}
+      <header className="mb-12">
+        <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h1>
+        <p className="mt-2 text-lg text-slate-600 dark:text-slate-400">
+          Welcome back, {user?.full_name?.split(' ')[0] || 'Admin'}! Here's a snapshot of your projects and deliverables.
+        </p>
+      </header>
+      
+      <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column - Main Content */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Metrics Grid */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+            <div 
+              className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => navigate(`/stages/${projectId}`)}
             >
-              <Alert className="border-blue-200 bg-blue-50">
-                <Info className="h-4 w-4 text-blue-600" />
-                <AlertDescription className="text-blue-800">
-                  Welcome to your brand development portal. Review deliverables requiring your attention in the sidebar.
-                </AlertDescription>
-              </Alert>
-            </motion.div>
-          )}
-          
-          {/* Project Title and Milestone Info */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">{project?.name || "Loading..."}</h1>
-            {project?.milestone_date && (
-              <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                <CalendarDays className="w-4 h-4" />
-                <span>
-                  {(() => {
-                    const days = differenceInDays(new Date(project.milestone_date), new Date());
-                    return days > 0 
-                      ? `${days} days until ${project.milestone_name || 'launch'}`
-                      : `${project.milestone_name || 'Launch'} reached`;
-                  })()}
+              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400">Active Stages</h3>
+              <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-2">
+                {metrics.inProgressStages}{' '}
+                <span className="text-base font-normal text-slate-600 dark:text-slate-400">
+                  of {metrics.totalStages}
                 </span>
-              </div>
-            )}
-          </div>
-          
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm font-medium text-slate-600">
-                <span>Project Progress</span>
-                <span className="font-semibold text-slate-800">{projectProgress}%</span>
-              </div>
-              <Progress value={projectProgress} className="h-2" />
+              </p>
             </div>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}>
-            {stages && stages.length > 0 ? (
-              <VisualTimeline 
-                stages={stages} 
-                onStageClick={handleStageClick} 
-                selectedStageId={selectedStageId}
-                teamMembers={teamMembers}
-                deliverables={deliverables}
-              />
-            ) : (
-              <div>No stages available to display</div>
-            )}
-          </motion.div>
-        </div>
-      </div>
-
-      <aside 
-        className={`${isSidebarExpanded ? 'w-[600px]' : 'w-[380px]'} flex-shrink-0 bg-white border-l border-gray-200 overflow-y-auto h-full transition-all duration-300`}
-      >
-        {selectedStage ? (
-          <StageSidebarV2 
-                stage={selectedStage} 
-                stages={stages}
-                comments={stageComments} 
-                onClose={() => {
-                  setSelectedStageId(null);
-                  setIsSidebarExpanded(false);
-                }}
-                onAddComment={canEdit ? handleAddComment : undefined}
-                onStageUpdate={canEdit ? handleStageUpdate : undefined}
-                teamMembers={teamMembers}
-                isExpanded={isSidebarExpanded}
-                onToggleExpand={() => setIsSidebarExpanded(!isSidebarExpanded)}
-                readOnly={!canEdit}
-                deliverables={deliverables}
-          />
-        ) : (
-          <div className="p-6 space-y-6">
-            {/* Enhanced attention widget for clients */}
-            {isClient && deliverables.filter(d => d.status === 'submitted').length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="p-4 bg-gradient-to-r from-red-50 to-orange-50 rounded-lg border border-red-200 cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => navigate('/deliverables')}
-              >
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-red-900">Action Required</h3>
-                    <p className="text-sm text-red-700 mt-1">
-                      You have {deliverables.filter(d => d.status === 'submitted').length} {deliverables.filter(d => d.status === 'submitted').length === 1 ? 'deliverable' : 'deliverables'} awaiting your review
-                    </p>
-                    <p className="text-xs text-red-600 mt-2 font-medium">Click to view →</p>
+            
+            <div 
+              className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => navigate('/deliverables')}
+            >
+              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400">Deliverables in Progress</h3>
+              <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-2">
+                {metrics.deliverablesInProgress}
+              </p>
+            </div>
+            
+            <div 
+              className={cn(
+                "p-6 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow",
+                metrics.pendingApprovals > 0 
+                  ? "bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800" 
+                  : "bg-white dark:bg-slate-800"
+              )}
+              onClick={() => navigate('/deliverables?status=submitted')}
+            >
+              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400">Approvals Pending</h3>
+              <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-2">
+                {metrics.pendingApprovals}
+              </p>
+            </div>
+            
+            <div 
+              className={cn(
+                "p-6 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow",
+                unreadNotificationCount > 0 
+                  ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800" 
+                  : "bg-white dark:bg-slate-800"
+              )}
+              onClick={() => {/* Open notification center */}}
+            >
+              <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400">Notifications</h3>
+              <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-2">
+                {unreadNotificationCount}
+              </p>
+            </div>
+          </section>
+          
+          {/* Project Status Overview */}
+          <section className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Project Status Overview</h2>
+              <Info className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            </div>
+            
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-lg font-medium text-slate-800 dark:text-slate-100">Project Status</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-3xl font-bold text-slate-800 dark:text-slate-100">{metrics.totalStages}</p>
+                  <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                    +{getProgressPercentage(metrics.completedStages)}%
+                  </span>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex items-center">
+                  <span className="w-28 text-sm text-slate-600 dark:text-slate-400">Not Started</span>
+                  <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                    <div 
+                      className="bg-gray-400 h-2.5 rounded-full transition-all cursor-pointer hover:bg-gray-500"
+                      style={{ width: `${getProgressPercentage(metrics.notStartedStages)}%` }}
+                      onClick={() => navigate(`/stages/${projectId}?status=not_started`)}
+                    />
                   </div>
                 </div>
-              </motion.div>
+                
+                <div className="flex items-center">
+                  <span className="w-28 text-sm text-slate-600 dark:text-slate-400">In Progress</span>
+                  <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                    <div 
+                      className="bg-indigo-500 h-2.5 rounded-full transition-all cursor-pointer hover:bg-indigo-600"
+                      style={{ width: `${getProgressPercentage(metrics.inProgressStages)}%` }}
+                      onClick={() => navigate(`/stages/${projectId}?status=in_progress`)}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex items-center">
+                  <span className="w-28 text-sm text-slate-600 dark:text-slate-400">Stuck</span>
+                  <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                    <div 
+                      className="bg-red-500 h-2.5 rounded-full transition-all cursor-pointer hover:bg-red-600"
+                      style={{ width: `${getProgressPercentage(metrics.blockedStages)}%` }}
+                      onClick={() => navigate(`/stages/${projectId}?status=blocked`)}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex items-center">
+                  <span className="w-28 text-sm text-slate-600 dark:text-slate-400">Completed</span>
+                  <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                    <div 
+                      className="bg-green-500 h-2.5 rounded-full transition-all cursor-pointer hover:bg-green-600"
+                      style={{ width: `${getProgressPercentage(metrics.completedStages)}%` }}
+                      onClick={() => navigate(`/stages/${projectId}?status=completed`)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+          
+          {/* Team Activity Feed */}
+          <section className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-4">Team Activity Feed</h2>
+            
+            {recentActivities.length > 0 ? (
+              <div className="space-y-3">
+                {recentActivities.map((activity) => (
+                  <div key={activity.id} className="flex items-start gap-3 pb-3 border-b border-slate-200 dark:border-slate-700 last:border-0">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                      {activity.type === 'comment' ? (
+                        <Activity className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                      ) : activity.type === 'approval' ? (
+                        <CheckSquare className="w-4 h-4 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <Activity className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-800 dark:text-slate-200">
+                        <span className="font-medium">{activity.user}</span>
+                        {' '}
+                        <span className="text-slate-600 dark:text-slate-400">{activity.action}</span>
+                        {activity.target && (
+                          <>
+                            {' '}
+                            <span className="font-medium text-slate-800 dark:text-slate-200">{activity.target}</span>
+                          </>
+                        )}
+                      </p>
+                      {activity.time && (
+                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-1">
+                          {formatDistanceToNow(new Date(activity.time), { addSuffix: true })}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button 
+                  className="mt-2 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 font-medium"
+                  onClick={() => {/* Open notifications */}}
+                >
+                  View all activity →
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg">
+                <Activity className="w-12 h-12 text-slate-400 dark:text-slate-500" />
+                <p className="mt-2 text-slate-600 dark:text-slate-400">No recent activity</p>
+              </div>
+            )}
+          </section>
+        </div>
+        
+        {/* Right Column - Sidebar */}
+        <div className="lg:col-span-1 space-y-8">
+          {/* Urgent Actions */}
+          <section className="bg-teal-50 dark:bg-teal-900/20 p-6 rounded-lg shadow-sm border border-teal-200 dark:border-teal-800">
+            <h2 className="text-xl font-semibold text-teal-800 dark:text-teal-200 mb-4">Urgent Actions</h2>
+            
+            {urgentActions.length > 0 ? (
+              <div className="space-y-3">
+                {urgentActions.map((action) => (
+                  <div 
+                    key={action.id}
+                    className="cursor-pointer hover:bg-teal-100 dark:hover:bg-teal-900/30 p-2 rounded transition-colors"
+                    onClick={action.action}
+                  >
+                    <p className="font-medium text-teal-800 dark:text-teal-200">{action.title}</p>
+                    <p className="text-sm text-teal-700 dark:text-teal-300">{action.description}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <CheckCircle className="w-8 h-8 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="font-medium text-teal-800 dark:text-teal-200">No urgent actions required</p>
+                  <p className="text-sm text-teal-700 dark:text-teal-300">All tasks are on track.</p>
+                </div>
+              </div>
             )}
             
-            <PremiumRequiresAttention 
-              deliverables={deliverables} 
-              outOfScopeRequests={!isClient ? outOfScopeRequests : []} 
-            />
-            <PremiumDeliverablesStatus deliverables={deliverables} />
-          </div>
-        )}
-      </aside>
-
+            <button 
+              className="mt-4 w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-white font-semibold py-2 px-4 rounded-lg border border-indigo-600 dark:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition"
+              onClick={() => navigate(`/stages/${projectId}`)}
+            >
+              View Stages
+            </button>
+          </section>
+          
+          {/* Deliverables Breakdown */}
+          <section className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-4">Deliverables Breakdown</h2>
+            
+            <div className="flex items-center mb-4">
+              <ClockIcon className="w-5 h-5 text-slate-600 dark:text-slate-400 mr-2" />
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Total: {metrics.totalDeliverables} Deliverables
+              </p>
+            </div>
+            
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center">
+                  <span className="w-3 h-3 rounded-full bg-gray-400 mr-2" />
+                  <span className="text-sm">Draft</span>
+                </div>
+                <span className="text-sm font-medium">{metrics.deliverablesByStatus.draft}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <div className="flex items-center">
+                  <span className="w-3 h-3 rounded-full bg-yellow-500 mr-2" />
+                  <span className="text-sm">In Progress</span>
+                </div>
+                <span className="text-sm font-medium">{metrics.deliverablesByStatus.wip}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <div className="flex items-center">
+                  <span className="w-3 h-3 rounded-full bg-blue-500 mr-2" />
+                  <span className="text-sm">Submitted</span>
+                </div>
+                <span className="text-sm font-medium">{metrics.deliverablesByStatus.submitted}</span>
+              </div>
+              
+              <div className="flex justify-between items-center">
+                <div className="flex items-center">
+                  <span className="w-3 h-3 rounded-full bg-green-500 mr-2" />
+                  <span className="text-sm">Approved</span>
+                </div>
+                <span className="text-sm font-medium">{metrics.deliverablesByStatus.approved}</span>
+              </div>
+              
+              {metrics.deliverablesByStatus.declined > 0 && (
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center">
+                    <span className="w-3 h-3 rounded-full bg-red-500 mr-2" />
+                    <span className="text-sm">Declined</span>
+                  </div>
+                  <span className="text-sm font-medium">{metrics.deliverablesByStatus.declined}</span>
+                </div>
+              )}
+            </div>
+            
+            {/* Progress Bar */}
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mb-4 overflow-hidden flex">
+              {metrics.deliverablesByStatus.approved > 0 && (
+                <div 
+                  className="bg-green-500 h-2.5 transition-all"
+                  style={{ width: `${(metrics.deliverablesByStatus.approved / metrics.totalDeliverables) * 100}%` }}
+                />
+              )}
+              {metrics.deliverablesByStatus.submitted > 0 && (
+                <div 
+                  className="bg-blue-500 h-2.5 transition-all"
+                  style={{ width: `${(metrics.deliverablesByStatus.submitted / metrics.totalDeliverables) * 100}%` }}
+                />
+              )}
+              {metrics.deliverablesByStatus.wip > 0 && (
+                <div 
+                  className="bg-yellow-500 h-2.5 transition-all"
+                  style={{ width: `${(metrics.deliverablesByStatus.wip / metrics.totalDeliverables) * 100}%` }}
+                />
+              )}
+              {metrics.deliverablesByStatus.draft > 0 && (
+                <div 
+                  className="bg-gray-400 h-2.5 transition-all"
+                  style={{ width: `${(metrics.deliverablesByStatus.draft / metrics.totalDeliverables) * 100}%` }}
+                />
+              )}
+              {metrics.deliverablesByStatus.declined > 0 && (
+                <div 
+                  className="bg-red-500 h-2.5 transition-all"
+                  style={{ width: `${(metrics.deliverablesByStatus.declined / metrics.totalDeliverables) * 100}%` }}
+                />
+              )}
+            </div>
+            
+            <button 
+              className="text-indigo-600 dark:text-indigo-400 font-semibold text-sm flex items-center group hover:text-indigo-700"
+              onClick={() => navigate('/deliverables')}
+            >
+              View all deliverables
+              <ArrowRight className="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </section>
+          
+          {/* Team Overview */}
+          <section className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Team Overview</h2>
+              <button 
+                className="text-indigo-600 dark:text-indigo-400 font-semibold text-sm flex items-center group hover:text-indigo-700"
+                onClick={() => navigate('/team')}
+              >
+                View team
+                <ArrowRight className="ml-1 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+            
+            {teamMembers.length > 0 ? (
+              <div className="flex items-center -space-x-2">
+                {teamMembers.slice(0, 7).map((member) => (
+                  <div 
+                    key={member.id}
+                    className="w-10 h-10 rounded-full bg-slate-700 text-white flex items-center justify-center font-bold ring-2 ring-white dark:ring-slate-800"
+                    title={member.name}
+                  >
+                    {member.name?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                ))}
+                {teamMembers.length > 7 && (
+                  <div 
+                    className="w-10 h-10 rounded-full bg-slate-500 text-white flex items-center justify-center font-bold ring-2 ring-white dark:ring-slate-800"
+                    onClick={() => navigate('/team')}
+                  >
+                    +{teamMembers.length - 7}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-400">No team members added yet</p>
+            )}
+          </section>
+        </div>
+        
+        {/* Bottom Section - Quick Links */}
+        <div className="lg:col-span-3">
+          <section>
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-4">Quick Links</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+              <button 
+                className="flex items-center justify-center p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                onClick={() => navigate(`/stages/${projectId}`)}
+              >
+                <Layers className="w-5 h-5 mr-2" />
+                All Stages
+              </button>
+              
+              <button 
+                className="flex items-center justify-center p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                onClick={() => navigate('/deliverables')}
+              >
+                <FileText className="w-5 h-5 mr-2" />
+                All Deliverables
+              </button>
+              
+              <button 
+                className="flex items-center justify-center p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                onClick={() => {/* Open notification center */}}
+              >
+                <Bell className="w-5 h-5 mr-2" />
+                Notifications
+              </button>
+              
+              <button 
+                className="flex items-center justify-center p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                onClick={() => navigate('/deliverables?status=submitted')}
+              >
+                <CheckSquare className="w-5 h-5 mr-2" />
+                Approvals
+              </button>
+            </div>
+          </section>
+        </div>
+      </main>
     </div>
   );
 }

@@ -1,0 +1,21 @@
+IMPORTANT: Princess Logo Setup
+==============================
+
+To complete the logo integration:
+
+1. Save your Princess crown logo PNG image as:
+   /Users/eimribar/Princess/public/princess-logo.png
+
+2. The logo should be the exact PNG image with:
+   - The crown integrated into the "princess" text
+   - Black text on transparent background
+   - High resolution for clarity
+
+3. Once the file is in place, the dashboard will automatically display it.
+
+The logo component is configured to:
+- Show the PNG logo in the dashboard sidebar
+- Display "by Deutsch & Co." underneath
+- Keep text-only version for auth/landing pages
+
+Current path expected: /princess-logo.png (in public folder)

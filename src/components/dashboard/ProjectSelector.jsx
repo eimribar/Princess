@@ -1,60 +1,59 @@
 /**
- * Project Selector Component
- * Allows users to switch between multiple projects
+ * Project Selector using Workspace Component
+ * Clean, professional project switcher with progress indicator
  */
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '@/contexts/ProjectContext';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Plus, Briefcase, FolderOpen } from 'lucide-react';
+  Workspaces,
+  WorkspaceTrigger,
+  WorkspaceContent,
+} from '@/components/ui/workspaces';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { PlusIcon } from 'lucide-react';
 
 export default function ProjectSelector() {
   const navigate = useNavigate();
   const { 
     switchProject, 
     currentProjectId, 
-    project: currentProject,
     projects,
+    stages,
     isLoading,
-    isSwitchingProject 
+    isSwitchingProject,
   } = useProject();
 
-  const handleProjectChange = async (projectId) => {
-    if (projectId === 'new') {
-      navigate('/project-initiation');
-    } else if (projectId !== currentProjectId) {
+  const handleProjectChange = async (project) => {
+    if (project.id !== currentProjectId) {
       // Switch project in context first
-      await switchProject(projectId);
+      await switchProject(project.id);
       // Then navigate
-      navigate(`/dashboard/${projectId}`);
+      navigate(`/dashboard/${project.id}`);
     }
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'on_hold': return 'bg-yellow-100 text-yellow-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // Calculate project progress
+  const projectProgress = stages ? 
+    Math.round((stages.filter(s => s.status === 'completed').length / stages.length) * 100) || 0 
+    : 0;
+
+  // Transform projects for workspace component with avatar URLs
+  const workspaceProjects = projects.map(p => ({
+    id: p.id,
+    name: p.name || 'Unnamed Project',
+    logo: `https://avatar.vercel.sh/${p.name?.replace(/\s+/g, '-').toLowerCase() || 'project'}`,
+    plan: p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1).replace('_', ' ') : 'Active',
+    ...p
+  }));
 
   if (isLoading || isSwitchingProject) {
     return (
-      <div className="flex items-center gap-2 px-4 py-2">
-        <Briefcase className="w-4 h-4 text-gray-400 animate-pulse" />
-        <span className="text-sm text-gray-500">
-          {isSwitchingProject ? 'Switching project...' : 'Loading projects...'}
-        </span>
+      <div className="flex items-center gap-3 px-3 py-2 rounded-md border border-slate-200 animate-pulse min-w-72">
+        <div className="w-6 h-6 rounded-full bg-slate-200" />
+        <div className="h-4 w-32 bg-slate-200 rounded" />
       </div>
     );
   }
@@ -63,10 +62,9 @@ export default function ProjectSelector() {
     return (
       <Button
         onClick={() => navigate('/project-initiation')}
-        variant="outline"
-        className="gap-2"
+        className="min-w-72"
       >
-        <Plus className="w-4 h-4" />
+        <PlusIcon className="mr-2 h-4 w-4" />
         Create First Project
       </Button>
     );
@@ -74,40 +72,33 @@ export default function ProjectSelector() {
 
   return (
     <div className="flex items-center gap-4">
-      <div className="flex items-center gap-2 text-sm text-gray-600">
-        <FolderOpen className="w-4 h-4" />
-        <span>Project:</span>
-      </div>
-      
-      <Select
-        value={currentProjectId || ''}
-        onValueChange={handleProjectChange}
-        disabled={isSwitchingProject}
+      <Workspaces
+        workspaces={workspaceProjects}
+        selectedWorkspaceId={currentProjectId}
+        onWorkspaceChange={handleProjectChange}
       >
-        <SelectTrigger className="w-[300px]">
-          <SelectValue>
-            {currentProject?.name || 'Select a project'}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {projects.map((project) => (
-            <SelectItem key={project.id} value={project.id}>
-              {project.name || 'Unnamed Project'}
-            </SelectItem>
-          ))}
-          
-          <SelectItem value="new" className="border-t mt-2 pt-2">
-            <div className="flex items-center gap-2 text-blue-600">
-              <Plus className="w-4 h-4" />
-              <span>Create New Project</span>
-            </div>
-          </SelectItem>
-        </SelectContent>
-      </Select>
+        <WorkspaceTrigger className="min-w-72" />
+        <WorkspaceContent>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground w-full justify-start"
+            onClick={() => navigate('/project-initiation')}
+          >
+            <PlusIcon className="mr-2 h-4 w-4" />
+            Create workspace
+          </Button>
+        </WorkspaceContent>
+      </Workspaces>
       
-      {projects.length > 1 && (
-        <div className="text-xs text-gray-500">
-          {projects.length} projects
+      {stages && stages.length > 0 && (
+        <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-slate-100/50 rounded-lg">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-medium text-slate-600">Progress</span>
+          </div>
+          <Progress value={projectProgress} className="h-2 w-20" />
+          <span className="text-xs font-bold text-slate-700">{projectProgress}%</span>
         </div>
       )}
     </div>

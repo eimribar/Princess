@@ -13,6 +13,7 @@ import ProjectRedirect from '@/components/ProjectRedirect'
 
 // Pages
 import Dashboard from '@/pages/Dashboard'
+import Stages from '@/pages/Stages'
 import Deliverables from '@/pages/Deliverables'
 import DeliverableDetailV2 from '@/pages/DeliverableDetailV2'
 import Team from '@/pages/Team'
@@ -112,6 +113,10 @@ function AppRoutes() {
               {/* Dashboard without projectId redirects to first project or creation */}
               <Route path="dashboard" element={<ProjectRedirect />} />
               <Route path="dashboard/:projectId" element={<Dashboard />} />
+              
+              {/* Stages routes (visual timeline view) */}
+              <Route path="stages" element={<ProjectRedirect />} />
+              <Route path="stages/:projectId" element={<Stages />} />
               <Route path="deliverables" element={<Deliverables />} />
               <Route path="deliverables/:id" element={<DeliverableDetailV2 />} />
               <Route path="team" element={<Team />} />

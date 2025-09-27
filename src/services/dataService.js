@@ -173,6 +173,13 @@ class DataService {
     return SupabaseNotification.delete(id);
   }
 
+  // Users (using team members as a proxy for now)
+  async getUsers(orderBy = 'name') {
+    // For now, return team members as users since we don't have a separate users table
+    // In production, this would connect to Clerk's user management
+    return SupabaseTeamMember.list(orderBy);
+  }
+
   // Team Members
   async getTeamMembers(orderBy = 'name') {
     return SupabaseTeamMember.list(orderBy);
