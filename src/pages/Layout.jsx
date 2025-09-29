@@ -63,6 +63,7 @@ export default function Layout({ children, currentPageName }) {
     const [attentionCount, setAttentionCount] = useState(0);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isHoveringLeftSidebar, setIsHoveringLeftSidebar] = useState(false);
+    const [isUserButtonOpen, setIsUserButtonOpen] = useState(false);
     
     // Filter navigation items based on user role
     const navigationItems = useMemo(() => {
@@ -90,6 +91,25 @@ export default function Layout({ children, currentPageName }) {
         }
     }, [user, deliverables]);
 
+    // Handle UserButton dropdown close when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // Check if click is outside the UserButton popover
+            const userButtonPopover = document.querySelector('[data-clerk-portal]');
+            if (isUserButtonOpen && userButtonPopover && !userButtonPopover.contains(event.target)) {
+                setIsUserButtonOpen(false);
+                // Also collapse sidebar if mouse is not over it
+                const sidebar = document.querySelector('[data-sidebar]');
+                if (sidebar && !sidebar.contains(event.target)) {
+                    setIsHoveringLeftSidebar(false);
+                }
+            }
+        };
+
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, [isUserButtonOpen]);
+
     const handleNotificationClick = (notification) => {
         // Navigate to the relevant deliverable when notification is clicked
         if (notification.data?.deliverable_id) {
@@ -97,17 +117,23 @@ export default function Layout({ children, currentPageName }) {
         }
     };
 
-    // Determine if sidebar is expanded
-    const isSidebarExpanded = isHoveringLeftSidebar;
+    // Determine if sidebar is expanded - keep expanded when UserButton is open
+    const isSidebarExpanded = isHoveringLeftSidebar || isUserButtonOpen;
     
     return (
         <TooltipProvider>
         <div className="h-screen flex w-full overflow-hidden">
             {/* Sidebar */}
             <div 
+                data-sidebar
                 className={`hidden md:flex ${isSidebarExpanded ? 'md:w-64' : 'md:w-20'} md:flex-col transition-all duration-300 h-screen relative`}
                 onMouseEnter={() => setIsHoveringLeftSidebar(true)}
-                onMouseLeave={() => setIsHoveringLeftSidebar(false)}
+                onMouseLeave={() => {
+                    // Don't collapse if UserButton is open
+                    if (!isUserButtonOpen) {
+                        setIsHoveringLeftSidebar(false);
+                    }
+                }}
             >
                 <div className="flex flex-col h-full border-r border-gray-200/60 bg-white/80 backdrop-blur-xl">
                     {/* Logo Header */}
@@ -233,7 +259,10 @@ export default function Layout({ children, currentPageName }) {
                         )}
 
                         {/* User Info */}
-                        <div className={`flex items-center ${isSidebarExpanded ? 'gap-3' : 'justify-center'}`}>
+                        <div 
+                            className={`flex items-center ${isSidebarExpanded ? 'gap-3' : 'justify-center'}`}
+                            onClick={() => setIsUserButtonOpen(true)}
+                        >
                             {!isSidebarExpanded ? (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
@@ -242,10 +271,12 @@ export default function Layout({ children, currentPageName }) {
                                                 appearance={{
                                                     elements: {
                                                         avatarBox: "w-10 h-10",
-                                                        userButtonTrigger: "focus:shadow-none"
+                                                        userButtonTrigger: "focus:shadow-none",
+                                                        userButtonPopoverCard: "z-[60]"
                                                     }
                                                 }}
                                                 afterSignOutUrl="/"
+                                                afterMultiSessionSingleSignOutUrl="/"
                                             />
                                         </div>
                                     </TooltipTrigger>
@@ -262,10 +293,12 @@ export default function Layout({ children, currentPageName }) {
                                         appearance={{
                                             elements: {
                                                 avatarBox: "w-10 h-10",
-                                                userButtonTrigger: "focus:shadow-none"
+                                                userButtonTrigger: "focus:shadow-none",
+                                                userButtonPopoverCard: "z-[60]"
                                             }
                                         }}
                                         afterSignOutUrl="/"
+                                        afterMultiSessionSingleSignOutUrl="/"
                                     />
                                     <div className="flex-1 min-w-0">
                                         <p className="font-semibold text-sm truncate">{user?.full_name || user?.email?.split('@')[0] || 'User'}</p>
@@ -443,10 +476,12 @@ export default function Layout({ children, currentPageName }) {
                                         appearance={{
                                             elements: {
                                                 avatarBox: "w-10 h-10",
-                                                userButtonTrigger: "focus:shadow-none"
+                                                userButtonTrigger: "focus:shadow-none",
+                                                userButtonPopoverCard: "z-[60]"
                                             }
                                         }}
                                         afterSignOutUrl="/"
+                                        afterMultiSessionSingleSignOutUrl="/"
                                     />
                                 </div>
                             </div>
