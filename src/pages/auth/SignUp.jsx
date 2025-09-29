@@ -75,15 +75,18 @@ export default function SignUpPage() {
   const handleGoogleSignUp = async () => {
     if (!signUp) return;
     
+    setIsLoading(true);
     try {
+      // Let Clerk handle the redirect URLs automatically
       await signUp.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: `${window.location.origin}/sso-callback`,
-        redirectUrlComplete: `${window.location.origin}/onboarding`
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/onboarding'
       });
     } catch (err) {
       console.error('Google sign-up error:', err);
       setError('Failed to sign up with Google. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -101,8 +104,18 @@ export default function SignUpPage() {
 
   // If already signed in, redirect to dashboard
   if (isSignedIn) {
-    navigate('/dashboard', { replace: true });
-    return null;
+    // Use setTimeout to avoid navigation during render
+    setTimeout(() => {
+      navigate('/dashboard', { replace: true });
+    }, 0);
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
+          <p className="mt-4 text-gray-400">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

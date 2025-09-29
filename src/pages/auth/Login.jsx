@@ -69,15 +69,18 @@ export default function Login() {
   const handleGoogleSignIn = async () => {
     if (!signIn) return;
     
+    setIsLoading(true);
     try {
+      // Let Clerk handle the redirect URLs automatically
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: `${window.location.origin}/sso-callback`,
-        redirectUrlComplete: `${window.location.origin}/dashboard`
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/dashboard'
       });
     } catch (err) {
       console.error('Google sign-in error:', err);
       setError('Failed to sign in with Google. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -95,8 +98,18 @@ export default function Login() {
 
   // If already signed in, redirect to dashboard
   if (isSignedIn) {
-    navigate('/dashboard', { replace: true });
-    return null;
+    // Use setTimeout to avoid navigation during render
+    setTimeout(() => {
+      navigate('/dashboard', { replace: true });
+    }, 0);
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
+          <p className="mt-4 text-gray-400">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

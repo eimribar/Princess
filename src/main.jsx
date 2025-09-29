@@ -62,8 +62,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <ErrorBoundary>
     <ClerkProvider 
       publishableKey={CLERK_PUBLISHABLE_KEY}
-      afterSignInUrl="/dashboard"
-      afterSignUpUrl="/onboarding"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/onboarding"
       signInUrl="/auth/login"
       signUpUrl="/auth/signup"
     >

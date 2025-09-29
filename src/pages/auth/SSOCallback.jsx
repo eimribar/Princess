@@ -1,56 +1,56 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, useSignIn, useSignUp } from '@clerk/clerk-react';
+import { useClerk } from '@clerk/clerk-react';
 import { Loader2 } from 'lucide-react';
 
 export default function SSOCallback() {
   const navigate = useNavigate();
-  const { isSignedIn, isLoaded } = useAuth();
-  const { signIn, setActive: setActiveSignIn } = useSignIn() || {};
-  const { signUp, setActive: setActiveSignUp } = useSignUp() || {};
+  const { handleRedirectCallback } = useClerk();
 
   useEffect(() => {
     const handleCallback = async () => {
-      // Wait for Clerk to be loaded
-      if (!isLoaded) return;
-
-      // If already signed in, redirect to dashboard
-      if (isSignedIn) {
-        console.log('User is signed in, redirecting to dashboard');
-        navigate('/dashboard', { replace: true });
-        return;
-      }
-
       try {
-        // Check if we have a sign-in or sign-up in progress
-        if (signIn?.status === 'complete') {
-          console.log('Sign-in complete, setting active session');
-          await setActiveSignIn({ session: signIn.createdSessionId });
-          navigate('/dashboard', { replace: true });
-        } else if (signUp?.status === 'complete') {
-          console.log('Sign-up complete, setting active session');
-          await setActiveSignUp({ session: signUp.createdSessionId });
-          navigate('/onboarding', { replace: true });
+        // Handle the redirect callback from Clerk
+        const result = await handleRedirectCallback({
+          afterSignInUrl: '/dashboard',
+          afterSignUpUrl: '/onboarding',
+        });
+
+        // Check the result and navigate accordingly
+        if (result?.createdSessionId) {
+          console.log('Session created successfully');
+          // The session is established, navigate based on the result
+          if (result.signUp) {
+            navigate('/onboarding', { replace: true });
+          } else {
+            navigate('/dashboard', { replace: true });
+          }
         } else {
-          // If no active auth flow, check if we need to redirect back to login
-          console.log('No active auth flow detected');
-          
-          // Give Clerk a moment to establish session
-          setTimeout(() => {
-            if (!isSignedIn) {
-              console.log('No session established, redirecting to login');
-              navigate('/auth/login', { replace: true });
-            }
-          }, 1000);
+          // If no session was created, redirect to login
+          console.log('No session created, redirecting to login');
+          navigate('/auth/login', { replace: true });
         }
       } catch (error) {
         console.error('Error handling SSO callback:', error);
-        navigate('/auth/login', { replace: true });
+        
+        // If it's a known Clerk error about missing __clerk_db_jwt, it means we're not in a callback flow
+        if (error?.errors?.[0]?.code === 'cookie_invalid') {
+          // Check if user is already signed in via regular flow
+          const isSignedIn = window.Clerk?.user;
+          if (isSignedIn) {
+            navigate('/dashboard', { replace: true });
+          } else {
+            navigate('/auth/login', { replace: true });
+          }
+        } else {
+          // For other errors, redirect to login
+          navigate('/auth/login', { replace: true });
+        }
       }
     };
 
     handleCallback();
-  }, [isLoaded, isSignedIn, signIn, signUp, navigate, setActiveSignIn, setActiveSignUp]);
+  }, [handleRedirectCallback, navigate]);
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">

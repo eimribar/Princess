@@ -10,11 +10,11 @@ const ClerkAuthGuard = ({
   allowedRoles = [], 
   redirectTo = '/auth/login' 
 }) => {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAuth();
   const { user, loading } = useUser();
   const location = useLocation();
 
-  // Show loading spinner while Clerk is loading
+  // Show loading spinner while Clerk is loading or verifying session
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -23,19 +23,22 @@ const ClerkAuthGuard = ({
     );
   }
 
-  // If auth is required but user is not signed in, redirect to login
-  if (requireAuth && !isSignedIn) {
-    // Don't redirect if we're already on an auth page
+  // Double-check authentication status with userId
+  const isAuthenticated = isSignedIn && userId;
+
+  // If auth is required but user is not authenticated, redirect to login
+  if (requireAuth && !isAuthenticated) {
+    // Don't redirect if we're already on an auth page or callback
     if (location.pathname.startsWith('/auth/') || location.pathname === '/sso-callback') {
       return children;
     }
     return <Navigate to={redirectTo} state={{ from: location }} replace />;
   }
   
-  // If auth is not required and user is signed in, redirect to dashboard
-  if (!requireAuth && isSignedIn) {
-    // Don't redirect if we're on the invitation accept page
-    if (location.pathname === '/invitation/accept') {
+  // If auth is not required and user is authenticated, redirect to dashboard
+  if (!requireAuth && isAuthenticated) {
+    // Don't redirect if we're on the invitation accept page or SSO callback
+    if (location.pathname === '/invitation/accept' || location.pathname === '/sso-callback') {
       return children;
     }
     return <Navigate to="/dashboard" replace />;
