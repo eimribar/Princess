@@ -99,6 +99,9 @@ export const UserProvider = ({ children }) => {
             // Check if user came from an invitation (has metadata)
             const isFromInvitation = !!clerkUser.publicMetadata?.project_id;
             
+            // Only new sign-ups need onboarding, not invited users who already have a team
+            const needsOnboarding = !isFromInvitation;
+            
             const newUser = {
               id: generateUUID(), // Use UUID for internal consistency
               clerk_user_id: clerkUser.id, // Store Clerk ID for authentication
@@ -116,15 +119,15 @@ export const UserProvider = ({ children }) => {
               is_active: true,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              onboarding_completed: false,
+              onboarding_completed: !needsOnboarding, // If from invitation, onboarding is complete
               onboarding_progress: {},
               onboarding_started_at: null,
-              onboarding_completed_at: null,
+              onboarding_completed_at: !needsOnboarding ? new Date().toISOString() : null,
               profile_image: clerkUser.imageUrl || null,
               title: null,
               department: null,
               bio: null,
-              needs_onboarding: true,
+              needs_onboarding: needsOnboarding,
               invitation_token: null,
               invited_by: clerkUser.publicMetadata?.invited_by || null
             };

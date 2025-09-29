@@ -102,21 +102,8 @@ export default function SignUpPage() {
     );
   }
 
-  // If already signed in, redirect to dashboard
-  if (isSignedIn) {
-    // Use setTimeout to avoid navigation during render
-    setTimeout(() => {
-      navigate('/dashboard', { replace: true });
-    }, 0);
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
-          <p className="mt-4 text-gray-400">Redirecting to dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+  // If already signed in, the AuthGuard will handle redirect
+  // Don't do manual redirect here to avoid loops
 
   return (
     <AuthLayout 

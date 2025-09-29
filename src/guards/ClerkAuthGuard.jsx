@@ -35,12 +35,19 @@ const ClerkAuthGuard = ({
     return <Navigate to={redirectTo} state={{ from: location }} replace />;
   }
   
-  // If auth is not required and user is authenticated, redirect to dashboard
+  // If auth is not required and user is authenticated
   if (!requireAuth && isAuthenticated) {
     // Don't redirect if we're on the invitation accept page or SSO callback
     if (location.pathname === '/invitation/accept' || location.pathname === '/sso-callback') {
       return children;
     }
+    
+    // Check if user needs onboarding
+    if (user && (user.needs_onboarding === true || user.onboarding_completed === false)) {
+      return <Navigate to="/onboarding" replace />;
+    }
+    
+    // Otherwise redirect to dashboard
     return <Navigate to="/dashboard" replace />;
   }
 

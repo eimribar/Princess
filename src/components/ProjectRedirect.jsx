@@ -5,20 +5,35 @@
 
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { SupabaseProject } from '@/api/supabaseEntities';
+import { SupabaseProject, SupabaseTeamMember } from '@/api/supabaseEntities';
+import { useUser } from '@/contexts/ClerkUserContext';
 import { Loader2 } from 'lucide-react';
 
 export default function ProjectRedirect() {
+  const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [firstProjectId, setFirstProjectId] = useState(null);
   
   useEffect(() => {
-    loadFirstProject();
-  }, []);
+    if (user) {
+      loadFirstProject();
+    }
+  }, [user]);
   
   const loadFirstProject = async () => {
     try {
-      // Get all projects
+      // For client users, find their assigned project
+      if (user?.role === 'client') {
+        const teamMembers = await SupabaseTeamMember.filter({ user_id: user.id });
+        if (teamMembers && teamMembers.length > 0) {
+          // Use the first project they're assigned to
+          setFirstProjectId(teamMembers[0].project_id);
+          setLoading(false);
+          return;
+        }
+      }
+      
+      // For admin/agency or if no team assignment found, get all projects
       const projects = await SupabaseProject.list('-created_at');
       
       if (projects && projects.length > 0) {
