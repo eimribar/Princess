@@ -25,7 +25,20 @@ const ClerkAuthGuard = ({
 
   // If auth is required but user is not signed in, redirect to login
   if (requireAuth && !isSignedIn) {
+    // Don't redirect if we're already on an auth page
+    if (location.pathname.startsWith('/auth/') || location.pathname === '/sso-callback') {
+      return children;
+    }
     return <Navigate to={redirectTo} state={{ from: location }} replace />;
+  }
+  
+  // If auth is not required and user is signed in, redirect to dashboard
+  if (!requireAuth && isSignedIn) {
+    // Don't redirect if we're on the invitation accept page
+    if (location.pathname === '/invitation/accept') {
+      return children;
+    }
+    return <Navigate to="/dashboard" replace />;
   }
 
   // Check role-based access if roles are specified

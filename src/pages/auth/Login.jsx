@@ -15,8 +15,8 @@ const GoogleIcon = () => (
 );
 
 export default function Login() {
-  const { signIn, setActive } = useSignIn();
-  const { isSignedIn } = useAuth();
+  const { signIn, setActive, isLoaded: signInLoaded } = useSignIn() || {};
+  const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const navigate = useNavigate();
   
   const [email, setEmail] = useState('');
@@ -72,8 +72,8 @@ export default function Login() {
     try {
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/dashboard'
+        redirectUrl: `${window.location.origin}/sso-callback`,
+        redirectUrlComplete: `${window.location.origin}/dashboard`
       });
     } catch (err) {
       console.error('Google sign-in error:', err);
@@ -81,9 +81,21 @@ export default function Login() {
     }
   };
 
+  // Show loading while Clerk is initializing
+  if (!authLoaded || !signInLoaded) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
+          <p className="mt-4 text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   // If already signed in, redirect to dashboard
   if (isSignedIn) {
-    navigate('/dashboard');
+    navigate('/dashboard', { replace: true });
     return null;
   }
 

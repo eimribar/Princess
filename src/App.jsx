@@ -30,6 +30,7 @@ import SignUp from '@/pages/auth/SignUp.jsx'
 import Welcome from '@/pages/auth/Welcome.jsx'
 import ForgotPassword from '@/pages/auth/ForgotPassword.jsx'
 import InvitationAccept from '@/pages/auth/InvitationAccept.jsx'
+import SSOCallback from '@/pages/auth/SSOCallback.jsx'
 
 // Onboarding
 import Onboarding from '@/pages/Onboarding'
@@ -69,6 +70,9 @@ function AppRoutes() {
       
       {/* Invitation acceptance route - using custom component for password setup */}
       <Route path="/invitation/accept" element={<InvitationAccept />} />
+      
+      {/* SSO Callback route for OAuth */}
+      <Route path="/sso-callback" element={<SSOCallback />} />
       
       {/* Auth routes */}
       <Route path="/auth/login" element={

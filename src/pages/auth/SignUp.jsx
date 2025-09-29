@@ -15,8 +15,8 @@ const GoogleIcon = () => (
 );
 
 export default function SignUpPage() {
-  const { signUp, setActive } = useSignUp();
-  const { isSignedIn } = useAuth();
+  const { signUp, setActive, isLoaded: signUpLoaded } = useSignUp() || {};
+  const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const navigate = useNavigate();
   
   const [firstName, setFirstName] = useState('');
@@ -78,8 +78,8 @@ export default function SignUpPage() {
     try {
       await signUp.authenticateWithRedirect({
         strategy: 'oauth_google',
-        redirectUrl: '/onboarding',
-        redirectUrlComplete: '/onboarding'
+        redirectUrl: `${window.location.origin}/sso-callback`,
+        redirectUrlComplete: `${window.location.origin}/onboarding`
       });
     } catch (err) {
       console.error('Google sign-up error:', err);
@@ -87,9 +87,21 @@ export default function SignUpPage() {
     }
   };
 
+  // Show loading while Clerk is initializing
+  if (!authLoaded || !signUpLoaded) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
+          <p className="mt-4 text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   // If already signed in, redirect to dashboard
   if (isSignedIn) {
-    navigate('/dashboard');
+    navigate('/dashboard', { replace: true });
     return null;
   }
 
