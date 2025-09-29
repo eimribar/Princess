@@ -29,7 +29,6 @@ import Login from '@/pages/auth/Login.jsx'
 import SignUp from '@/pages/auth/SignUp.jsx'
 import Welcome from '@/pages/auth/Welcome.jsx'
 import ForgotPassword from '@/pages/auth/ForgotPassword.jsx'
-import ResetPassword from '@/pages/auth/ResetPassword.jsx'
 import InvitationAccept from '@/pages/auth/InvitationAccept.jsx'
 
 // Onboarding
@@ -85,16 +84,6 @@ function AppRoutes() {
       <Route path="/auth/forgot-password" element={
         <AuthGuard requireAuth={false}>
           <ForgotPassword />
-        </AuthGuard>
-      } />
-      <Route path="/auth/reset-password" element={
-        <AuthGuard requireAuth={false}>
-          <ResetPassword />
-        </AuthGuard>
-      } />
-      <Route path="/auth/callback" element={
-        <AuthGuard requireAuth={false}>
-          <ResetPassword />
         </AuthGuard>
       } />
       
