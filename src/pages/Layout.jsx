@@ -91,24 +91,72 @@ export default function Layout({ children, currentPageName }) {
         }
     }, [user, deliverables]);
 
-    // Handle UserButton dropdown close when clicking outside
+    // Detect UserButton dropdown state using MutationObserver
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            // Check if click is outside the UserButton popover
-            const userButtonPopover = document.querySelector('[data-clerk-portal]');
-            if (isUserButtonOpen && userButtonPopover && !userButtonPopover.contains(event.target)) {
-                setIsUserButtonOpen(false);
-                // Also collapse sidebar if mouse is not over it
-                const sidebar = document.querySelector('[data-sidebar]');
-                if (sidebar && !sidebar.contains(event.target)) {
-                    setIsHoveringLeftSidebar(false);
+        let observer;
+        let resetTimeout;
+        
+        // Function to check if dropdown is present
+        const checkDropdownPresence = () => {
+            const dropdownExists = !!(
+                document.querySelector('[data-clerk-portal]') ||
+                document.querySelector('.cl-userButtonPopoverCard') ||
+                document.querySelector('.cl-popoverCard')
+            );
+            
+            if (dropdownExists !== isUserButtonOpen) {
+                setIsUserButtonOpen(dropdownExists);
+                
+                // If dropdown closed, also reset hover state after a delay
+                if (!dropdownExists) {
+                    resetTimeout = setTimeout(() => {
+                        setIsHoveringLeftSidebar(false);
+                    }, 200);
                 }
             }
         };
-
+        
+        // Set up MutationObserver to watch for Clerk dropdown
+        observer = new MutationObserver(() => {
+            checkDropdownPresence();
+        });
+        
+        // Start observing
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['data-clerk-portal', 'class']
+        });
+        
+        // Also handle click outside
+        const handleClickOutside = (event) => {
+            const sidebar = document.querySelector('[data-sidebar]');
+            const dropdownElements = document.querySelectorAll('[data-clerk-portal], .cl-userButtonPopoverCard, .cl-popoverCard');
+            
+            let clickedInsideDropdown = false;
+            dropdownElements.forEach(el => {
+                if (el && el.contains(event.target)) {
+                    clickedInsideDropdown = true;
+                }
+            });
+            
+            // If clicked outside both sidebar and dropdown, collapse everything
+            if (!clickedInsideDropdown && sidebar && !sidebar.contains(event.target)) {
+                setIsUserButtonOpen(false);
+                setIsHoveringLeftSidebar(false);
+            }
+        };
+        
         document.addEventListener('click', handleClickOutside);
-        return () => document.removeEventListener('click', handleClickOutside);
-    }, [isUserButtonOpen]);
+        
+        // Cleanup
+        return () => {
+            if (observer) observer.disconnect();
+            if (resetTimeout) clearTimeout(resetTimeout);
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, []);
 
     const handleNotificationClick = (notification) => {
         // Navigate to the relevant deliverable when notification is clicked
@@ -128,10 +176,30 @@ export default function Layout({ children, currentPageName }) {
                 data-sidebar
                 className={`hidden md:flex ${isSidebarExpanded ? 'md:w-64' : 'md:w-20'} md:flex-col transition-all duration-300 h-screen relative`}
                 onMouseEnter={() => setIsHoveringLeftSidebar(true)}
-                onMouseLeave={() => {
-                    // Don't collapse if UserButton is open
-                    if (!isUserButtonOpen) {
-                        setIsHoveringLeftSidebar(false);
+                onMouseLeave={(e) => {
+                    // Check if we're moving to the UserButton dropdown
+                    const relatedTarget = e.relatedTarget;
+                    const isMovingToDropdown = relatedTarget && (
+                        relatedTarget.closest('[data-clerk-portal]') ||
+                        relatedTarget.closest('.cl-userButtonPopoverCard') ||
+                        relatedTarget.closest('.cl-popoverCard')
+                    );
+                    
+                    // Don't collapse if UserButton is open or moving to dropdown
+                    if (!isUserButtonOpen && !isMovingToDropdown) {
+                        // Add a small delay to prevent flashing
+                        setTimeout(() => {
+                            // Double-check dropdown isn't open
+                            const dropdownStillExists = !!(
+                                document.querySelector('[data-clerk-portal]') ||
+                                document.querySelector('.cl-userButtonPopoverCard') ||
+                                document.querySelector('.cl-popoverCard')
+                            );
+                            
+                            if (!dropdownStillExists) {
+                                setIsHoveringLeftSidebar(false);
+                            }
+                        }, 100);
                     }
                 }}
             >
@@ -259,10 +327,7 @@ export default function Layout({ children, currentPageName }) {
                         )}
 
                         {/* User Info */}
-                        <div 
-                            className={`flex items-center ${isSidebarExpanded ? 'gap-3' : 'justify-center'}`}
-                            onClick={() => setIsUserButtonOpen(true)}
-                        >
+                        <div className={`flex items-center ${isSidebarExpanded ? 'gap-3' : 'justify-center'}`}>
                             {!isSidebarExpanded ? (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
